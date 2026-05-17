@@ -1,4 +1,4 @@
-# File: test_graph.py
+# File: tests/test_graph.py
 #
 # ## Purpose
 # Test the Opsify Antigravity state-graph pipeline with various multilingual customer inputs.
@@ -17,6 +17,10 @@
 #
 # ## Notes
 # Used for verification and pipeline demonstration.
+
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from orchestrator.graph import AntigravityGraph
 import json
