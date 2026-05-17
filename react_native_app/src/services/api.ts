@@ -24,19 +24,66 @@ export const ApiService = {
     return response.json();
   },
 
+  async addProduct(data: any): Promise<any> {
+    const response = await fetch(`${BASE_URL}/products/add`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.detail || 'Failed to add product');
+    }
+    return response.json();
+  },
+
+  async getSuppliers(): Promise<any[]> {
+    const response = await fetch(`${BASE_URL}/suppliers`);
+    if (!response.ok) throw new Error('Failed to fetch suppliers');
+    return response.json();
+  },
+
+  async addSupplier(data: any): Promise<any> {
+    const response = await fetch(`${BASE_URL}/suppliers/add`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.detail || 'Failed to add supplier');
+    }
+    return response.json();
+  },
+
   async getTransactions(): Promise<any[]> {
     const response = await fetch(`${BASE_URL}/transactions`);
     if (!response.ok) throw new Error('Failed to fetch transactions');
     return response.json();
   },
 
-  async recordTransaction(type: 'sale' | 'restock', data: any): Promise<any> {
+  async getDemandPredictions(): Promise<any[]> {
+    const response = await fetch(`${BASE_URL}/inventory/predictions`);
+    if (!response.ok) throw new Error('Failed to fetch predictions');
+    return response.json();
+  },
+
+  async getReorderSuggestions(): Promise<any[]> {
+    const response = await fetch(`${BASE_URL}/inventory/suggestions`);
+    if (!response.ok) throw new Error('Failed to fetch reorder suggestions');
+    return response.json();
+  },
+
+  async recordTransaction(type: 'sale' | 'restock' | 'adjustment', data: any): Promise<any> {
     const response = await fetch(`${BASE_URL}/transactions/${type}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    if (!response.ok) throw new Error(`Failed to record ${type}`);
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.detail || `Failed to record ${type}`);
+    }
     return response.json();
   }
 };

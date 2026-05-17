@@ -1,7 +1,7 @@
 # File: tests/test_inventory.py
 #
 # ## Purpose
-# Validate the SQLite inventory operations and stock deduction logic of System 2.
+# Validate the SQLite inventory operations, predictive algorithms, and stock deduction logic of System 2.
 
 import sys
 import os
@@ -16,12 +16,14 @@ from company_brain.inventory import (
     record_sale,
     record_restock,
     record_adjustment,
-    get_transactions
+    get_transactions,
+    get_demand_predictions,
+    get_reorder_suggestions
 )
 
 def run_tests():
     print("=" * 60)
-    print("STARTING SYSTEM 2: FULL INVENTORY VALIDATION")
+    print("STARTING SYSTEM 2: ADVANCED INVENTORY VALIDATION")
     print("=" * 60)
 
     # 1. Clean previous runs
@@ -37,12 +39,12 @@ def run_tests():
     # 3. View Suppliers
     print("\nSuppliers:")
     for sup in get_suppliers():
-        print(f"  [{sup['id']}] {sup['name']} (Rating: {sup['rating']})")
+        print(f"  [{sup['id']}] {sup['name']} (Rating: {sup['rating']}, Reliability: {sup['reliability_score']})")
 
     # 4. View Products
     print("\nInitial Products:")
     for prod in get_products():
-        print(f"  [{prod['id']}] {prod['name']} (SKU: {prod['sku']}) - Stock: {prod['stock']}")
+        print(f"  [{prod['id']}] {prod['name']} ({prod['variant']}) - Stock: {prod['stock']} {prod['unit']}")
 
     # 5. Record a Sale
     print("\nExecuting Sale: Selling 10 units of Product ID 1...")
@@ -56,13 +58,24 @@ def run_tests():
 
     # 7. Record an Adjustment (Damage)
     print("\nExecuting Adjustment: Lost 2 units of Product ID 1...")
-    res = record_adjustment(1, -2.0)
+    res = record_adjustment(1, -2.0, "Damaged in transit")
     print(f"  Result: {res['status']}, Remaining: {res.get('remaining_stock')}")
 
     # 8. View Transactions
-    print("\nTransactions:")
+    print("\nTransactions Ledger:")
     for tx in get_transactions():
-        print(f"  [{tx['timestamp']}] {tx['type']} - {tx['product_name']} | Qty: {tx['quantity']} | Value: {tx['total_value']}")
+        reason = f" (Reason: {tx['reason']})" if tx['reason'] else ""
+        print(f"  [{tx['timestamp']}] {tx['type']}{reason} - {tx['product_name']} | Qty: {tx['quantity']} | Value: {tx['total_value']}")
+
+    # 9. Predictive Engine
+    print("\nDemand Predictions (30-day velocity):")
+    for pred in get_demand_predictions():
+        print(f"  [{pred['product_id']}] {pred['name']}: {pred['daily_velocity']} {pred['unit']}/day -> Stock-out: {pred['estimated_stockout_date']}")
+
+    # 10. Reorder Suggestions
+    print("\nAI Reorder Suggestions:")
+    for sug in get_reorder_suggestions():
+        print(f"  [ALERT] [{sug['urgency']}] {sug['message']}")
 
 if __name__ == "__main__":
     run_tests()

@@ -11,7 +11,9 @@ from company_brain.inventory import (
     record_sale,
     record_restock,
     record_adjustment,
-    get_transactions
+    get_transactions,
+    get_demand_predictions,
+    get_reorder_suggestions
 )
 
 app = FastAPI(title="Opsify AI Orchestrator API")
@@ -19,7 +21,7 @@ app = FastAPI(title="Opsify AI Orchestrator API")
 # Initialize database tables and seed values on start
 init_db()
 
-# Allow requests from Flutter app
+# Allow requests from React Native app / web
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # For local testing
@@ -44,12 +46,15 @@ class SupplierRequest(BaseModel):
     name: str
     contact: str
     rating: float
+    reliability_score: float
     lead_time_days: int
 
 class ProductRequest(BaseModel):
     sku: str
     name: str
     category: str
+    variant: str
+    unit: str
     stock: float
     reorder_threshold: float
     cost_price: float
@@ -64,6 +69,7 @@ class TransactionRequest(BaseModel):
 class AdjustmentRequest(BaseModel):
     product_id: int
     quantity_diff: float
+    reason: str
 
 @app.get("/")
 def read_root():
@@ -81,7 +87,7 @@ def orchestrate_order(req: OrderRequest):
             cat = intent.get("category", "")
             
             # Simple heuristic for MVP: Match product name to intent category
-            if cat in ["Milk", "Wire", "Pipe"]:
+            if cat in ["Milk", "Wire", "Pipe", "Bread"]:
                 qty_str = intent.get("quantity", "1")
                 try:
                     qty = float(''.join(c for c in qty_str if c.isdigit() or c == '.'))
@@ -112,7 +118,7 @@ def api_get_suppliers():
 
 @app.post("/api/suppliers/add")
 def api_add_supplier(req: SupplierRequest):
-    res = add_supplier(req.name, req.contact, req.rating, req.lead_time_days)
+    res = add_supplier(req.name, req.contact, req.rating, req.reliability_score, req.lead_time_days)
     if res["status"] == "error":
         raise HTTPException(status_code=400, detail=res["message"])
     return res
@@ -123,7 +129,7 @@ def api_get_products():
 
 @app.post("/api/products/add")
 def api_add_product(req: ProductRequest):
-    res = add_product(req.sku, req.name, req.category, req.stock, req.reorder_threshold, req.cost_price, req.selling_price, req.supplier_id)
+    res = add_product(req.sku, req.name, req.category, req.variant, req.unit, req.stock, req.reorder_threshold, req.cost_price, req.selling_price, req.supplier_id)
     if res["status"] == "error":
         raise HTTPException(status_code=400, detail=res["message"])
     return res
@@ -144,7 +150,7 @@ def api_record_restock(req: TransactionRequest):
 
 @app.post("/api/transactions/adjustment")
 def api_record_adjustment(req: AdjustmentRequest):
-    res = record_adjustment(req.product_id, req.quantity_diff)
+    res = record_adjustment(req.product_id, req.quantity_diff, req.reason)
     if res["status"] == "error":
         raise HTTPException(status_code=400, detail=res["message"])
     return res
@@ -152,6 +158,15 @@ def api_record_adjustment(req: AdjustmentRequest):
 @app.get("/api/transactions")
 def api_get_transactions():
     return get_transactions()
+
+# Advanced Predictive Endpoints
+@app.get("/api/inventory/predictions")
+def api_get_demand_predictions():
+    return get_demand_predictions()
+
+@app.get("/api/inventory/suggestions")
+def api_get_reorder_suggestions():
+    return get_reorder_suggestions()
 
 if __name__ == "__main__":
     import uvicorn
