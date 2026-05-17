@@ -1,62 +1,151 @@
-# Opsify 🚀
-**AI Service Orchestrator for the Informal Economy**
+# File: README.md
 
-Opsify is an advanced, AI-native orchestrator designed to streamline operations for the informal economy (electricians, plumbers, AC technicians, etc.). Built on a Blackboard/State-Graph "Antigravity" architecture, it acts as a digital manager that runs the business 24/7.
+## Purpose
+Exhaustive master documentation explaining the entire Opsify architecture, end-to-end integration, event schemas, chronological sprint roadmaps, and Flutter frontend implementation.
 
-## The 3 Brains of Opsify (Systems)
+## Responsibility
+Serve as the centralized entry point and blueprint for the whole Opsify platform.
 
-Opsify is architected into 3 interconnected "Brains" (Systems). We are building **System 1** first for the hackathon MVP, laying the groundwork to easily snap in Systems 2 and 3.
+## Inputs
+Technical parameters of all three modular brain systems.
 
-### 1. 📥 Interaction & Order Intelligence System ("Customer Brain" Layer)
-**Status: In Progress**
+## Outputs
+Repository guidelines, styling definitions, terminal widget blueprints, and master API loops.
 
-This system handles everything coming from customers, turning messy human communication into clean business data.
-- **What it does:**
-  - Reads WhatsApp, Facebook, SMS messages.
-  - Understands Urdu, Roman Urdu, English.
-  - Processes voice notes into text (Future integration).
-  - Detects buying intent automatically and extracts structured order data.
-- **Example Flow:**
-  - *Customer:* "Kal 2 kilo doodh bhej dena"
-  - *AI Extraction:* Product: Milk | Quantity: 2kg | Delivery: Tomorrow
-  - *Output:* Creates order ticket, sends confirmation, updates dashboard.
+## Dependencies
+- SYSTEM_1_CUSTOMER_BRAIN.md
+- SYSTEM_2_COMPANY_BRAIN.md
+- SYSTEM_3_ACTION_BRAIN.md
 
-### 2. 📦 Business Operations System ("Company Brain" Layer)
-**Status: Planned (Phase 2)**
-
-This is the core decision-making engine that runs the business like a human manager (but faster and 24/7).
-- **What it does:**
-  - **Inventory Intelligence:** Tracks stock, predicts shortages, identifies fast-selling items.
-  - **Procurement Engine:** Finds suppliers, compares prices, auto-orders when safe.
-  - **Business Analytics:** Generates sales reports, profit tracking, demand forecasting.
-
-### 3. 🚚 Logistics & Execution System ("Action Brain" Layer)
-**Status: Planned (Phase 3)**
-
-This system turns AI decisions into real-world action.
-- **What it does:**
-  - **Delivery Optimization:** Groups nearby orders, creates routes, assigns riders.
-  - **Customer Communication:** Sends ETAs, confirms orders, shares receipts.
-  - **Workflow Execution:** Executes procurement orders, updates stock after delivery.
+## Notes
+Follows premium dark UI visual guidelines and clean architecture standards.
 
 ---
 
-## 🛠️ Architecture (Antigravity State-Graph)
+# 🚀 Opsify Master Architecture & Integration Specification
 
-We use a State-Graph (Blackboard) architecture. The central `OmniState` (the Blackboard) is passed between highly specialized Agent nodes.
+Opsify is an advanced, AI-native orchestrator built on a Blackboard/State-Graph (Antigravity) architecture designed to manage the informal economy 24/7.
 
-### Current Pipeline (Customer Brain)
-1. **Linguistic Intent Agent:** Parses multi-lingual text into structured JSON.
-2. **Hyperlocal Matching Agent:** Queries the provider database for available technicians.
-3. **Decision & Ranking Agent:** Evaluates providers and selects the best one with reasoning.
-4. **Action Simulation Agent:** Books the selected provider.
+---
 
-### Project Layout
+## 🏗️ 1. Decoupled Systems Overview
+
+Opsify is divided into 3 independent, highly specialized "Brains":
+
+*   **1. [Customer Brain](file:///e:/projects/Opsify/SYSTEM_1_CUSTOMER_BRAIN.md):** Ingests raw multi-lingual customer requests (text/voice), parses intents, and simulates reservations.
+*   **2. [Company Brain](file:///e:/projects/Opsify/SYSTEM_2_COMPANY_BRAIN.md):** Monitors stock limits, auto-replenishes commodities using wholesaler price bidding comparisons, and updates ledgers.
+*   **3. [Action Brain](file:///e:/projects/Opsify/SYSTEM_3_ACTION_BRAIN.md):** Allocates nearest regional riders, optimizes geolocations, and triggers notification alerts.
+
+---
+
+## 🔄 2. End-to-End Master Event Integration Loop
+
+Each system runs completely decoupled. The master API server (`main.py`) orchestrates them sequentially using structured JSON event contracts (Rule 7 compliant formats):
+
+```mermaid
+sequenceDiagram
+    participant App as Flutter Frontend
+    participant Gateway as FastAPI main.py
+    participant C_Brain as Customer Brain
+    participant Co_Brain as Company Brain
+    participant A_Brain as Action Brain
+
+    App->>Gateway: Raw Customer Request (Text/Voice)
+    Gateway->>C_Brain: Run state-graph pipelines
+    C_Brain-->>Gateway: Event CUSTOMER_ORDER_BOOKED
+    Gateway->>Co_Brain: Run stock-deduction & ledger adjustments
+    Co_Brain-->>Gateway: Event BUSINESS_DISPATCH_CONFIRMED
+    Gateway->>A_Brain: Assign rider & optimize route
+    A_Brain-->>Gateway: Dispatch SMS Alerts & ETA details
+    Gateway-->>App: Master Response + Dynamic Agent Trace Logs
 ```
-opsify/
-├── main.py                       # FastAPI entry point
-├── orchestrator/                 # Graph definitions and State schema
-├── agents/                       # AI Agent nodes
-├── tools/                        # Tools used by agents (DB queries, booking)
-└── systems/                      # The 3 Brains (Phased approach)
+
+---
+
+## 📆 3. Master Chronological Implementation Plan
+
+Follow this sprint timeline checklist to execute the complete platform:
+
+*   [ ] **1. Scaffolding (Today):** Run python graph pipeline verifications: `python test_graph.py`.
+*   [ ] **2. System 2 Company Brain Scaffolds (Days 1-2):** Code the `company_brain` directory and run isolated mock test cycles: `python test_company.py`.
+*   [ ] **3. System 3 Action Brain Scaffolds (Days 3-4):** Code `action_brain` directory and verify simulated rider dispatches: `python test_action.py`.
+*   [ ] **4. Master Stitch Integration (Day 5):** Sequence all three graphs into a combined API route `/api/orchestrate/master` in `main.py`.
+*   [ ] **5. Live API Upgrades (Days 6-8):** Connect Supabase databases, active geolocation maps, and live LLM prompt pipelines.
+*   [ ] **6. Flutter Client Integration (Days 9-10):** Link client screens to view live monospaced terminal thought traces.
+
+---
+
+## 📱 4. Flutter Premium Application Blueprint
+
+Ensure the mobile app delivers a visual premium dark glassmorphic styling.
+
+### 🎨 4.1 Immersive HSL Color Styling
+*   Scaffold Dark Backdrops: `#0F111A`
+*   Glass Card overlays: `#1E2235` (borders `#2E3450`, width 1.5)
+*   Neon green highlight CLI: `#00FF88`
+*   Primary Action Blue: `#00D2FF`
+
+### 📟 4.2 Dynamic Auto-Scrolling Trace Terminal Widget
+Keep the trace console lively! Implement this scroll controller that auto-scrolls down when logs arrive:
+
+```dart
+class _TraceTerminalWidgetState extends State<TraceTerminalWidget> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void didUpdateWidget(covariant TraceTerminalWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 250,
+      decoration: BoxDecoration(
+        color: Color(0xFF05070B),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Color(0xFF1B2F25), width: 1.5),
+      ),
+      padding: EdgeInsets.all(12),
+      child: ListView.builder(
+        controller: _scrollController,
+        itemCount: widget.logs.length,
+        itemBuilder: (context, index) {
+          return Text(
+            widget.logs[index],
+            style: TextStyle(color: Color(0xFF00FF88), fontFamily: 'monospace', fontSize: 12),
+          );
+        },
+      ),
+    );
+  }
+}
+```
+
+### 🎤 4.3 Multipart Audio API Upload Client
+Record raw audio messages and dispatch them as binary multi-part requests to FastAPI:
+
+```dart
+Future<Map<String, dynamic>> uploadAudioOrder(String filepath) async {
+  final uri = Uri.parse('http://127.0.0.1:8000/api/orchestrate/audio');
+  final request = http.MultipartRequest('POST', uri);
+  request.files.add(await http.MultipartFile.fromPath('file', filepath));
+  
+  final response = await request.send();
+  if (response.statusCode == 200) {
+    final responseBody = await response.stream.bytesToString();
+    return jsonDecode(responseBody);
+  } else {
+    throw Exception('Audio upload failed');
+  }
+}
 ```
