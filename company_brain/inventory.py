@@ -100,12 +100,20 @@ def init_db():
     if cursor.fetchone()[0] == 0:
         # Seed Suppliers
         cursor.execute("INSERT INTO suppliers (name, contact, rating, reliability_score, lead_time_days) VALUES (?, ?, ?, ?, ?)", 
-                       ("Dairy Central", "info@dairy.com", 4.8, 95.0, 1))
+                       ("Dairy Central", "info@dairy.com", 4.8, 95.0, 3))
         sup_milk = cursor.lastrowid
         
         cursor.execute("INSERT INTO suppliers (name, contact, rating, reliability_score, lead_time_days) VALUES (?, ?, ?, ?, ?)", 
-                       ("BuildMart", "sales@buildmart.com", 4.5, 88.0, 3))
+                       ("BuildMart", "sales@buildmart.com", 4.5, 88.0, 4))
         sup_build = cursor.lastrowid
+        
+        cursor.execute("INSERT INTO suppliers (name, contact, rating, reliability_score, lead_time_days) VALUES (?, ?, ?, ?, ?)", 
+                       ("Speedy Supply", "fast@speedy.com", 4.0, 90.0, 1)) # Fastest, but lower rating (so higher mock price in our algo)
+        sup_speedy = cursor.lastrowid
+        
+        cursor.execute("INSERT INTO suppliers (name, contact, rating, reliability_score, lead_time_days) VALUES (?, ?, ?, ?, ?)", 
+                       ("Discount Depot", "cheap@discount.com", 3.2, 70.0, 5)) # Slowest, but lowest rating (so cheapest mock price)
+        sup_discount = cursor.lastrowid
         
         # Seed Products
         mock_items = [
