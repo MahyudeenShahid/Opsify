@@ -199,6 +199,16 @@ def api_get_reorder_suggestions():
 def api_sync_sheets():
     return sync_inventory_to_sheets()
 
+# --- SYSTEM 1 AGENTIC KIT ---
+from agents.chat_scan_agent import scan_chats_for_incomplete_orders
+
+@app.post("/api/agents/scan-chats")
+def api_scan_chats(req: list):
+    try:
+        return scan_chats_for_incomplete_orders(req)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

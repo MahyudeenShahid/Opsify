@@ -1,14 +1,23 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { StyleSheet, Text, TouchableOpacity, View, ScrollView, ActivityIndicator, Alert, Animated } from 'react-native';
+import { BlurView } from 'expo-blur';
+import { CloudSync, RefreshCw, BarChart2, Package, Users, FileText } from 'lucide-react-native';
+
 import { Theme } from '../core/theme';
 import { ApiService } from '../services/api';
-
 import { PredictiveDashboard } from '../components/inventory/PredictiveDashboard';
 import { ProductManager } from '../components/inventory/ProductManager';
 import { SupplierManager } from '../components/inventory/SupplierManager';
 import { TransactionManager } from '../components/inventory/TransactionManager';
 
 type SubTab = 'insights' | 'products' | 'suppliers' | 'transactions';
+
+const TABS: { id: SubTab, label: string, icon: any }[] = [
+  { id: 'insights', label: 'Insights', icon: BarChart2 },
+  { id: 'products', label: 'Products', icon: Package },
+  { id: 'suppliers', label: 'Suppliers', icon: Users },
+  { id: 'transactions', label: 'Ledger', icon: FileText }
+];
 
 export const InventoryDashboardScreen: React.FC = () => {
   const [activeTab, setActiveTab] = useState<SubTab>('insights');
@@ -22,20 +31,27 @@ export const InventoryDashboardScreen: React.FC = () => {
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
 
+  // Animations
+  const contentOpacity = useRef(new Animated.Value(0)).current;
+
   const fetchData = async () => {
     setIsLoading(true);
+    Animated.timing(contentOpacity, { toValue: 0, duration: 200, useNativeDriver: true }).start();
     try {
-      const inv = await ApiService.getProducts();
-      const led = await ApiService.getTransactions();
-      const preds = await ApiService.getDemandPredictions();
-      const suggs = await ApiService.getReorderSuggestions();
-      const wh = await ApiService.getWarehouses();
-      
+      const [inv, led, preds, suggs, wh] = await Promise.all([
+        ApiService.getProducts(),
+        ApiService.getTransactions(),
+        ApiService.getDemandPredictions(),
+        ApiService.getReorderSuggestions(),
+        ApiService.getWarehouses()
+      ]);
       setInventory(inv);
       setLedger(led);
       setPredictions(preds);
       setSuggestions(suggs);
       setWarehouses(wh);
+      
+      Animated.timing(contentOpacity, { toValue: 1, duration: 400, useNativeDriver: true }).start();
     } catch (e: any) {
       console.error(e);
     } finally {
@@ -43,9 +59,7 @@ export const InventoryDashboardScreen: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  useEffect(() => { fetchData(); }, []);
 
   const handleSyncSheets = async () => {
     setIsSyncing(true);
@@ -62,42 +76,56 @@ export const InventoryDashboardScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Opsify: ERP Hub</Text>
+        <View>
+          <Text style={styles.title}>Data Ledger</Text>
+          <Text style={styles.subtitle}>Inventory & Analytics Hub</Text>
+        </View>
+        
         <View style={styles.headerButtons}>
-          <TouchableOpacity style={[styles.refreshButton, { marginRight: 8 }]} onPress={handleSyncSheets} disabled={isSyncing}>
-            <Text style={styles.refreshButtonText}>{isSyncing ? 'Syncing...' : 'Sheets Sync'}</Text>
+          <TouchableOpacity style={styles.actionBtn} onPress={handleSyncSheets} disabled={isSyncing}>
+            {isSyncing ? <ActivityIndicator size="small" color={Theme.colors.primary} /> : <CloudSync color={Theme.colors.primary} size={20} />}
           </TouchableOpacity>
-          <TouchableOpacity style={styles.refreshButton} onPress={fetchData}>
-            <Text style={styles.refreshButtonText}>Refresh Data</Text>
+          <TouchableOpacity style={styles.actionBtn} onPress={fetchData}>
+            <RefreshCw color={Theme.colors.textMuted} size={20} />
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Sub-Navigation Tabs */}
-      <View style={styles.tabContainer}>
-        {(['insights', 'products', 'suppliers', 'transactions'] as SubTab[]).map((tab) => (
-          <TouchableOpacity 
-            key={tab}
-            style={[styles.tabButton, activeTab === tab && styles.tabButtonActive]}
-            onPress={() => setActiveTab(tab)}
-          >
-            <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
-            </Text>
-          </TouchableOpacity>
-        ))}
+      {/* Glassmorphic Tab Container */}
+      <View style={styles.tabWrapper}>
+        <BlurView intensity={30} tint="dark" style={styles.tabContainer}>
+          {TABS.map((tab) => {
+            const isActive = activeTab === tab.id;
+            const Icon = tab.icon;
+            return (
+              <TouchableOpacity 
+                key={tab.id}
+                style={[styles.tabButton, isActive && styles.tabButtonActive]}
+                onPress={() => setActiveTab(tab.id)}
+              >
+                <Icon size={16} color={isActive ? '#FFF' : Theme.colors.textMuted} style={{ marginRight: 6 }} />
+                <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
+                  {tab.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </BlurView>
       </View>
 
       <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
         {isLoading ? (
-          <ActivityIndicator size="large" color={Theme.colors.primary} style={styles.loader} />
+          <View style={styles.loaderContainer}>
+            <ActivityIndicator size="large" color={Theme.colors.primary} />
+            <Text style={styles.loaderText}>Syncing Ledger Nodes...</Text>
+          </View>
         ) : (
-          <>
+          <Animated.View style={{ opacity: contentOpacity }}>
             {activeTab === 'insights' && <PredictiveDashboard predictions={predictions} suggestions={suggestions} />}
-            {activeTab === 'products' && <ProductManager inventory={inventory} onRefresh={fetchData} warehouses={warehouses} />}
+            {activeTab === 'products' && <ProductManager inventory={inventory} onRefresh={fetchData} />}
             {activeTab === 'suppliers' && <SupplierManager />}
-            {activeTab === 'transactions' && <TransactionManager ledger={ledger} onRefresh={fetchData} warehouses={warehouses} />}
-          </>
+            {activeTab === 'transactions' && <TransactionManager ledger={ledger} onRefresh={fetchData} />}
+          </Animated.View>
         )}
       </ScrollView>
     </View>
@@ -107,72 +135,94 @@ export const InventoryDashboardScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Theme.colors.background,
+    backgroundColor: 'transparent',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginHorizontal: Theme.spacing.md,
-    marginTop: Theme.spacing.md,
-    marginBottom: Theme.spacing.sm,
+    paddingHorizontal: Theme.spacing.md,
+    paddingTop: Theme.spacing.lg,
+    paddingBottom: Theme.spacing.md,
   },
   title: {
-    color: Theme.colors.text,
-    fontSize: 20,
-    fontWeight: 'bold',
+    color: '#FFF',
+    fontSize: 32,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  subtitle: {
+    color: Theme.colors.primary,
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 2,
+    marginTop: 2,
   },
   headerButtons: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
-  refreshButton: {
-    paddingHorizontal: Theme.spacing.sm,
-    paddingVertical: Theme.spacing.xs,
-    borderRadius: Theme.borderRadius.sm,
+  actionBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: Theme.borderRadius.pill,
     backgroundColor: Theme.colors.surface,
+    borderWidth: 1,
     borderColor: Theme.colors.border,
-    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Theme.shadows.glow,
   },
-  refreshButtonText: {
-    color: Theme.colors.primary,
-    fontWeight: 'bold',
-    fontSize: 12,
+  tabWrapper: {
+    marginHorizontal: Theme.spacing.md,
+    marginBottom: Theme.spacing.lg,
+    borderRadius: Theme.borderRadius.pill,
+    overflow: 'hidden',
   },
   tabContainer: {
     flexDirection: 'row',
-    marginHorizontal: Theme.spacing.md,
-    backgroundColor: Theme.colors.surface,
-    borderRadius: Theme.borderRadius.md,
-    borderWidth: 1.5,
+    backgroundColor: Theme.colors.glass,
+    borderWidth: 1,
     borderColor: Theme.colors.border,
-    marginBottom: Theme.spacing.md,
-    padding: 2,
+    padding: 4,
   },
   tabButton: {
     flex: 1,
+    flexDirection: 'row',
     paddingVertical: Theme.spacing.sm,
     alignItems: 'center',
-    borderRadius: Theme.borderRadius.sm,
+    justifyContent: 'center',
+    borderRadius: Theme.borderRadius.pill,
   },
   tabButtonActive: {
-    backgroundColor: Theme.colors.border,
+    backgroundColor: 'rgba(255,255,255,0.1)',
   },
   tabText: {
     color: Theme.colors.textMuted,
     fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: '600',
   },
   tabTextActive: {
-    color: Theme.colors.text,
+    color: '#FFF',
+    fontWeight: 'bold',
   },
   scrollContainer: {
     flex: 1,
   },
   contentContainer: {
     paddingHorizontal: Theme.spacing.md,
-    paddingBottom: Theme.spacing.xl,
+    paddingBottom: Theme.spacing.xxl * 2, // Space for global floating nav
   },
-  loader: {
-    marginTop: Theme.spacing.xl,
+  loaderContainer: {
+    marginTop: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+  loaderText: {
+    color: Theme.colors.textMuted,
+    marginTop: 16,
+    fontSize: 14,
+    letterSpacing: 1,
+  }
 });

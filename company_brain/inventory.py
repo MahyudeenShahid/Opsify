@@ -262,3 +262,99 @@ def get_transactions() -> List[Dict[str, Any]]:
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
+
+def get_demand_predictions() -> List[Dict[str, Any]]:
+    """
+    Computes daily sales velocity per product & warehouse over the last 30 days,
+    and returns predictions and stock-out dates.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    thirty_days_ago = (datetime.now() - timedelta(days=30)).isoformat()
+    
+    # Calculate velocity: total quantity sold in last 30 days / 30
+    cursor.execute("""
+        SELECT pw.product_id, pw.warehouse_id, p.name as product_name, w.name as warehouse_name, 
+               pw.stock, p.unit, COALESCE(SUM(t.quantity), 0) as total_sold
+        FROM product_warehouses pw
+        JOIN products p ON pw.product_id = p.id
+        JOIN warehouses w ON pw.warehouse_id = w.id
+        LEFT JOIN transactions t ON pw.product_id = t.product_id 
+             AND pw.warehouse_id = t.warehouse_id 
+             AND t.type = 'SALE' 
+             AND t.timestamp >= ?
+        GROUP BY pw.product_id, pw.warehouse_id
+    """, (thirty_days_ago,))
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    predictions = []
+    for r in rows:
+        stock = r["stock"]
+        total_sold = r["total_sold"]
+        daily_velocity = total_sold / 30.0
+        
+        # Avoid division by zero, use a minimal baseline if no sales yet
+        if daily_velocity == 0:
+            daily_velocity = 0.5 # Default heuristic
+            
+        days_remaining = stock / daily_velocity
+        stock_out_date = (datetime.now() + timedelta(days=days_remaining)).strftime("%Y-%m-%d")
+        
+        predictions.append({
+            "product_id": r["product_id"],
+            "product_name": r["product_name"],
+            "warehouse_name": r["warehouse_name"],
+            "current_stock": stock,
+            "unit": r["unit"],
+            "daily_velocity": round(daily_velocity, 2),
+            "days_remaining": round(days_remaining, 1),
+            "stock_out_date": stock_out_date,
+            "predicted_demand_30d": round(daily_velocity * 30, 1)
+        })
+        
+    return predictions
+
+def get_reorder_suggestions() -> List[Dict[str, Any]]:
+    """
+    Checks which products in which warehouses have dropped below their reorder threshold
+    and returns restocking recommendations.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT pw.product_id, pw.warehouse_id, p.name as product_name, w.name as warehouse_name,
+               pw.stock, pw.reorder_threshold, s.name as supplier_name, s.lead_time_days
+        FROM product_warehouses pw
+        JOIN products p ON pw.product_id = p.id
+        JOIN warehouses w ON pw.warehouse_id = w.id
+        LEFT JOIN suppliers s ON p.supplier_id = s.id
+        WHERE pw.stock <= pw.reorder_threshold
+    """)
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    suggestions = []
+    for r in rows:
+        lead_time = r["lead_time_days"] or 3
+        # Suggest restocking amount to double the threshold as a safe buffer
+        suggested_qty = r["reorder_threshold"] * 2
+        
+        suggestions.append({
+            "product_id": r["product_id"],
+            "product_name": r["product_name"],
+            "warehouse_name": r["warehouse_name"],
+            "current_stock": r["stock"],
+            "threshold": r["reorder_threshold"],
+            "supplier_name": r["supplier_name"] or "Default Supplier",
+            "lead_time_days": lead_time,
+            "suggested_reorder_qty": suggested_qty,
+            "urgency": "HIGH" if r["stock"] == 0 else "MEDIUM"
+        })
+        
+    return suggestions
+

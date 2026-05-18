@@ -1,158 +1,269 @@
-import React, { useState } from 'react';
-import { StyleSheet, Text, TextInput, TouchableOpacity, View, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View, ActivityIndicator, FlatList, Alert, Animated, Easing } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import { Send, Zap, Activity, ScanLine, ShoppingCart, ArrowDownToLine, PackageSearch } from 'lucide-react-native';
+
 import { Theme } from '../core/theme';
 import { ApiService } from '../services/api';
 import { TraceTerminal } from '../widgets/TraceTerminal';
+
+interface IncompleteOrder {
+  chat_id: string;
+  type: 'SALE' | 'RESTOCK' | 'ADJUSTMENT';
+  contact_name: string;
+  item: 'Milk' | 'Wire' | 'Pipe' | 'Bread';
+  quantity: number;
+  value: number;
+  warehouse_id: number;
+  reason: string;
+}
 
 export const CustomerBrainScreen: React.FC = () => {
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [status, setStatus] = useState('');
   const [traceLogs, setTraceLogs] = useState<string[]>([]);
-  const [selectedProvider, setSelectedProvider] = useState<any>(null);
+  
+  const [incompleteOrders, setIncompleteOrders] = useState<IncompleteOrder[]>([]);
+  const [isScanning, setIsScanning] = useState(false);
+
+  // Animations
+  const headerOpacity = useRef(new Animated.Value(0)).current;
+  const headerTranslateY = useRef(new Animated.Value(-20)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(headerOpacity, { toValue: 1, duration: 600, useNativeDriver: true }),
+      Animated.spring(headerTranslateY, { toValue: 0, friction: 6, useNativeDriver: true })
+    ]).start();
+
+    handleScanChats();
+  }, []);
 
   const handleSend = async () => {
     if (!message.trim()) return;
-
     setIsLoading(true);
     setTraceLogs([]);
     setStatus('Running Antigravity Graph...');
-    setSelectedProvider(null);
 
     try {
       const data = await ApiService.sendOrder(message);
       setStatus(data.execution_status);
       setTraceLogs(data.trace_logs);
-      setSelectedProvider(data.provider);
+      handleScanChats();
     } catch (e: any) {
       setStatus(`Error: ${e.message}`);
     } finally {
       setIsLoading(false);
+      setMessage('');
     }
+  };
+
+  const handleScanChats = async () => {
+    setIsScanning(true);
+    try {
+      const demoChatsPayload = [
+        { id: "chat_alice", users: [{ name: "Alice (Dairy Supplier)" }], messages: [{ text: "Hi, did you get the dairy reorder request?" }] },
+        { id: "chat_bob", users: [{ name: "Bob Malone (Hardware Buyer)" }], messages: [{ text: "Hey, can I buy 50 meters of Copper Wire?" }] }
+      ];
+      const orders = await ApiService.scanChats(demoChatsPayload);
+      setIncompleteOrders(orders);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const handleBookOrder = async (order: IncompleteOrder) => {
+    try {
+      const categoryToProductId: Record<string, number> = { 'Milk': 1, 'Wire': 2, 'Pipe': 3, 'Bread': 4 };
+      const productId = categoryToProductId[order.item] || 1;
+      const txType = order.type === 'SALE' ? 'sale' : 'restock';
+
+      await ApiService.recordTransaction(txType, {
+        product_id: productId,
+        warehouse_id: order.warehouse_id || 1,
+        quantity: order.quantity,
+        value: order.value
+      });
+
+      Alert.alert("⚡ Transaction Booked", `Successfully logged ${order.quantity} units of ${order.item}!`);
+      setIncompleteOrders(prev => prev.filter(o => o.chat_id !== order.chat_id));
+      ApiService.syncSheets().catch(e => console.log(e));
+    } catch (e: any) {
+      Alert.alert("Booking Error", e.message);
+    }
+  };
+
+  const renderIncompleteOrder = ({ item, index }: { item: IncompleteOrder, index: number }) => {
+    return <OrderCard item={item} index={index} onBook={() => handleBookOrder(item)} />;
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Opsify: Customer Brain</Text>
-      
-      <View style={styles.inputContainer}>
+      <Animated.View style={[styles.header, { opacity: headerOpacity, transform: [{ translateY: headerTranslateY }] }]}>
+        <View style={styles.headerTitleRow}>
+          <Activity color={Theme.colors.primary} size={28} />
+          <Text style={styles.title}>System 1 Brain</Text>
+        </View>
+        <Text style={styles.subtitle}>Autonomous Interaction Engine</Text>
+      </Animated.View>
+
+      <View style={styles.inputCard}>
         <TextInput
           style={styles.input}
-          placeholder="Enter Customer Request (Urdu/English)"
+          placeholder="Manual command override..."
           placeholderTextColor={Theme.colors.textMuted}
           value={message}
           onChangeText={setMessage}
           onSubmitEditing={handleSend}
         />
         <TouchableOpacity style={styles.sendButton} onPress={handleSend} disabled={isLoading}>
-          <Text style={styles.sendButtonText}>Send</Text>
+          {isLoading ? <ActivityIndicator color="#000" /> : <Send color="#000" size={20} />}
         </TouchableOpacity>
       </View>
 
-      {isLoading && <ActivityIndicator size="large" color={Theme.colors.primary} style={styles.loader} />}
-
-      {status ? <Text style={styles.statusText}>Status: {status}</Text> : null}
-
-      {selectedProvider && Object.keys(selectedProvider).length > 0 ? (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>✅ Booked: {selectedProvider.name}</Text>
-          <Text style={styles.cardSubtitle}>
-            Rating: {selectedProvider.rating} ★ | Rs {selectedProvider.price_per_hr}/hr
-          </Text>
-          <Text style={styles.cardReasoning}>
-            AI Reasoning: {selectedProvider.reasoning_string}
-          </Text>
+      <View style={styles.scanSection}>
+        <View style={styles.scanHeader}>
+          <View style={styles.scanTitleRow}>
+            <ScanLine color={Theme.colors.warning} size={18} />
+            <Text style={styles.sectionTitle}>Agentic Order Scans</Text>
+          </View>
+          <TouchableOpacity style={styles.scanButton} onPress={handleScanChats} disabled={isScanning}>
+            {isScanning ? <ActivityIndicator size="small" color={Theme.colors.primary} /> : <Text style={styles.scanButtonText}>Re-Scan</Text>}
+          </TouchableOpacity>
         </View>
-      ) : null}
 
-      <Text style={styles.terminalLabel}>Antigravity Agent Trace Logs:</Text>
+        {incompleteOrders.length === 0 ? (
+          <View style={styles.emptyState}>
+            <PackageSearch color={Theme.colors.border} size={48} />
+            <Text style={styles.emptyText}>No pending drafts detected in live chats.</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={incompleteOrders}
+            keyExtractor={item => item.chat_id}
+            renderItem={renderIncompleteOrder}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.orderList}
+          />
+        )}
+      </View>
+
       <View style={styles.terminalContainer}>
+        <View style={styles.terminalHeader}>
+          <Text style={styles.terminalHeaderText}>LIVE TRACE LOGS</Text>
+        </View>
         <TraceTerminal logs={traceLogs} />
       </View>
     </View>
   );
 };
 
+// Animated Card Component
+const OrderCard = ({ item, index, onBook }: { item: IncompleteOrder, index: number, onBook: () => void }) => {
+  const isSale = item.type === 'SALE';
+  const slideAnim = useRef(new Animated.Value(50)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 1, duration: 400, delay: index * 150, useNativeDriver: true }),
+      Animated.spring(slideAnim, { toValue: 0, friction: 8, delay: index * 150, useNativeDriver: true })
+    ]).start();
+  }, []);
+
+  return (
+    <Animated.View style={[styles.orderCard, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+      <LinearGradient colors={Theme.gradients.surface} style={[StyleSheet.absoluteFill, { borderRadius: Theme.borderRadius.lg }]} />
+      
+      <View style={styles.cardHeader}>
+        <Text style={styles.contactName}>{item.contact_name}</Text>
+        <View style={[styles.typeBadge, isSale ? styles.saleBadge : styles.restockBadge]}>
+          {isSale ? <ShoppingCart size={12} color="#00FFA3" /> : <ArrowDownToLine size={12} color="#FFB800" />}
+          <Text style={[styles.badgeText, isSale ? { color: '#00FFA3' } : { color: '#FFB800' }]}>
+            {item.type}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.cardDetails}>
+        <View style={styles.statBox}>
+          <Text style={styles.statLabel}>ITEM</Text>
+          <Text style={styles.statValue}>{item.item}</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={styles.statLabel}>QTY</Text>
+          <Text style={styles.statValue}>{item.quantity}</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={styles.statLabel}>TOTAL</Text>
+          <Text style={styles.statValue}>Rs {item.value}</Text>
+        </View>
+      </View>
+
+      <View style={styles.reasonBox}>
+        <Zap color={Theme.colors.primary} size={14} style={{ marginRight: 6 }} />
+        <Text style={styles.reasonText}>"{item.reason}"</Text>
+      </View>
+
+      <TouchableOpacity activeOpacity={0.8} onPress={onBook} style={{ borderRadius: Theme.borderRadius.md, overflow: 'hidden' }}>
+        <LinearGradient 
+          colors={isSale ? Theme.gradients.success : Theme.gradients.secondary} 
+          start={{x:0,y:0}} end={{x:1,y:0}} 
+          style={styles.bookBtn}
+        >
+          <Text style={styles.bookBtnText}>{isSale ? "Execute Sale Order" : "Approve Restock"}</Text>
+        </LinearGradient>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+};
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Theme.colors.background,
-    padding: Theme.spacing.md,
-  },
-  title: {
-    color: Theme.colors.text,
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: Theme.spacing.md,
-    marginTop: Theme.spacing.md,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    marginBottom: Theme.spacing.md,
-  },
-  input: {
-    flex: 1,
-    height: 50,
-    backgroundColor: Theme.colors.surface,
-    borderColor: Theme.colors.border,
-    borderWidth: 1.5,
-    borderRadius: Theme.borderRadius.md,
-    paddingHorizontal: Theme.spacing.md,
-    color: Theme.colors.text,
-  },
-  sendButton: {
-    width: 80,
-    backgroundColor: Theme.colors.primary,
-    borderRadius: Theme.borderRadius.md,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: Theme.spacing.sm,
-  },
-  sendButtonText: {
-    color: '#000',
-    fontWeight: 'bold',
-    fontSize: 15,
-  },
-  loader: {
-    marginVertical: Theme.spacing.md,
-  },
-  statusText: {
-    color: Theme.colors.text,
-    fontWeight: 'bold',
-    fontSize: 16,
-    marginBottom: Theme.spacing.sm,
-  },
-  card: {
-    backgroundColor: Theme.colors.surface,
-    borderColor: Theme.colors.border,
-    borderWidth: 1.5,
-    borderRadius: Theme.borderRadius.xl,
-    padding: Theme.spacing.md,
-    marginBottom: Theme.spacing.md,
-  },
-  cardTitle: {
-    color: Theme.colors.secondary,
-    fontWeight: 'bold',
-    fontSize: 16,
-    marginBottom: Theme.spacing.xs,
-  },
-  cardSubtitle: {
-    color: Theme.colors.text,
-    fontSize: 14,
-    marginBottom: Theme.spacing.sm,
-  },
-  cardReasoning: {
-    color: Theme.colors.textMuted,
-    fontStyle: 'italic',
-    fontSize: 13,
-  },
-  terminalLabel: {
-    color: Theme.colors.text,
-    fontWeight: 'bold',
-    fontSize: 14,
-    marginBottom: Theme.spacing.sm,
-  },
-  terminalContainer: {
-    flex: 1,
-  },
+  container: { flex: 1, backgroundColor: 'transparent', padding: Theme.spacing.md },
+  header: { marginBottom: Theme.spacing.md, marginTop: Theme.spacing.sm },
+  headerTitleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  title: { color: '#FFF', fontSize: 28, fontWeight: '900', marginLeft: 8, letterSpacing: 1 },
+  subtitle: { color: Theme.colors.primary, fontSize: 13, textTransform: 'uppercase', letterSpacing: 2, marginLeft: 36 },
+  
+  inputCard: { flexDirection: 'row', backgroundColor: Theme.colors.surface, borderRadius: Theme.borderRadius.lg, padding: 6, borderWidth: 1, borderColor: Theme.colors.border, marginBottom: Theme.spacing.lg, ...Theme.shadows.glass },
+  input: { flex: 1, height: 48, paddingHorizontal: Theme.spacing.md, color: '#FFF', fontSize: 15 },
+  sendButton: { width: 48, height: 48, borderRadius: Theme.borderRadius.md, backgroundColor: Theme.colors.primary, alignItems: 'center', justifyContent: 'center' },
+  
+  scanSection: { flex: 0.6, marginBottom: Theme.spacing.md },
+  scanHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Theme.spacing.sm },
+  scanTitleRow: { flexDirection: 'row', alignItems: 'center' },
+  sectionTitle: { color: '#FFF', fontWeight: 'bold', fontSize: 16, marginLeft: 8 },
+  scanButton: { paddingVertical: 6, paddingHorizontal: 12, backgroundColor: 'rgba(0,240,255,0.1)', borderRadius: Theme.borderRadius.pill, borderWidth: 1, borderColor: Theme.colors.primary },
+  scanButtonText: { color: Theme.colors.primary, fontSize: 12, fontWeight: 'bold' },
+  
+  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Theme.colors.surface, borderRadius: Theme.borderRadius.xl, borderWidth: 1, borderColor: Theme.colors.border, borderStyle: 'dashed' },
+  emptyText: { color: Theme.colors.textMuted, marginTop: 12, fontSize: 13 },
+  
+  orderList: { paddingBottom: Theme.spacing.sm },
+  orderCard: { padding: Theme.spacing.md, borderRadius: Theme.borderRadius.lg, borderWidth: 1, borderColor: Theme.colors.border, marginBottom: Theme.spacing.sm, ...Theme.shadows.glass },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Theme.spacing.sm },
+  contactName: { color: '#FFF', fontWeight: 'bold', fontSize: 16 },
+  typeBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: Theme.borderRadius.pill, borderWidth: 1 },
+  saleBadge: { backgroundColor: 'rgba(0,255,163,0.1)', borderColor: 'rgba(0,255,163,0.3)' },
+  restockBadge: { backgroundColor: 'rgba(255,184,0,0.1)', borderColor: 'rgba(255,184,0,0.3)' },
+  badgeText: { fontSize: 10, fontWeight: 'bold', marginLeft: 4 },
+  
+  cardDetails: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: Theme.spacing.md, backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: Theme.borderRadius.md, padding: Theme.spacing.sm },
+  statBox: { alignItems: 'center', flex: 1 },
+  statLabel: { color: Theme.colors.textMuted, fontSize: 10, fontWeight: 'bold', marginBottom: 2 },
+  statValue: { color: '#FFF', fontSize: 15, fontWeight: 'bold' },
+  
+  reasonBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: Theme.colors.primaryGlow, padding: Theme.spacing.sm, borderRadius: Theme.borderRadius.sm, marginBottom: Theme.spacing.md },
+  reasonText: { color: Theme.colors.primary, fontSize: 12, flex: 1, fontStyle: 'italic' },
+  
+  bookBtn: { height: 44, alignItems: 'center', justifyContent: 'center' },
+  bookBtnText: { color: '#FFF', fontWeight: 'bold', fontSize: 14, textTransform: 'uppercase', letterSpacing: 1 },
+  
+  terminalContainer: { flex: 0.4, backgroundColor: Theme.colors.terminalBg, borderRadius: Theme.borderRadius.lg, borderWidth: 1, borderColor: Theme.colors.terminalBorder, overflow: 'hidden' },
+  terminalHeader: { backgroundColor: Theme.colors.terminalBorder, paddingVertical: 6, paddingHorizontal: 12 },
+  terminalHeaderText: { color: Theme.colors.textMuted, fontSize: 10, fontWeight: 'bold', letterSpacing: 2 }
 });
