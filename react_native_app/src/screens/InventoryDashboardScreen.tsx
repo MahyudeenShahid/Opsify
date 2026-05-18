@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View, ScrollView, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { Theme } from '../core/theme';
 import { ApiService } from '../services/api';
 
@@ -13,12 +13,14 @@ type SubTab = 'insights' | 'products' | 'suppliers' | 'transactions';
 export const InventoryDashboardScreen: React.FC = () => {
   const [activeTab, setActiveTab] = useState<SubTab>('insights');
   const [isLoading, setIsLoading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Global State for UI
   const [inventory, setInventory] = useState<any[]>([]);
   const [ledger, setLedger] = useState<any[]>([]);
   const [predictions, setPredictions] = useState<any[]>([]);
   const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [warehouses, setWarehouses] = useState<any[]>([]);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -27,11 +29,13 @@ export const InventoryDashboardScreen: React.FC = () => {
       const led = await ApiService.getTransactions();
       const preds = await ApiService.getDemandPredictions();
       const suggs = await ApiService.getReorderSuggestions();
+      const wh = await ApiService.getWarehouses();
       
       setInventory(inv);
       setLedger(led);
       setPredictions(preds);
       setSuggestions(suggs);
+      setWarehouses(wh);
     } catch (e: any) {
       console.error(e);
     } finally {
@@ -43,13 +47,30 @@ export const InventoryDashboardScreen: React.FC = () => {
     fetchData();
   }, []);
 
+  const handleSyncSheets = async () => {
+    setIsSyncing(true);
+    try {
+      const res = await ApiService.syncSheets();
+      Alert.alert(res.fallback ? "Fallback Active" : "Sync Success", res.message);
+    } catch (e: any) {
+      Alert.alert("Sync Failed", e.message);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Opsify: ERP Hub</Text>
-        <TouchableOpacity style={styles.refreshButton} onPress={fetchData}>
-          <Text style={styles.refreshButtonText}>Refresh Data</Text>
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity style={[styles.refreshButton, { marginRight: 8 }]} onPress={handleSyncSheets} disabled={isSyncing}>
+            <Text style={styles.refreshButtonText}>{isSyncing ? 'Syncing...' : 'Sheets Sync'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.refreshButton} onPress={fetchData}>
+            <Text style={styles.refreshButtonText}>Refresh Data</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Sub-Navigation Tabs */}
@@ -73,9 +94,9 @@ export const InventoryDashboardScreen: React.FC = () => {
         ) : (
           <>
             {activeTab === 'insights' && <PredictiveDashboard predictions={predictions} suggestions={suggestions} />}
-            {activeTab === 'products' && <ProductManager inventory={inventory} onRefresh={fetchData} />}
+            {activeTab === 'products' && <ProductManager inventory={inventory} onRefresh={fetchData} warehouses={warehouses} />}
             {activeTab === 'suppliers' && <SupplierManager />}
-            {activeTab === 'transactions' && <TransactionManager ledger={ledger} onRefresh={fetchData} />}
+            {activeTab === 'transactions' && <TransactionManager ledger={ledger} onRefresh={fetchData} warehouses={warehouses} />}
           </>
         )}
       </ScrollView>
@@ -100,6 +121,9 @@ const styles = StyleSheet.create({
     color: Theme.colors.text,
     fontSize: 20,
     fontWeight: 'bold',
+  },
+  headerButtons: {
+    flexDirection: 'row',
   },
   refreshButton: {
     paddingHorizontal: Theme.spacing.sm,

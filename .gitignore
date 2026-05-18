@@ -1,3 +1,13 @@
 .agents
 .env
 .vscode
+service_account.json
+node_modules
+__pycache__
+venv
+react_native_app/node_modules
+firebase_config.json
+react_native_app/ios
+react_native_app/android
+react_native_app/ios/Pods
+firebase-adminsdk.json

@@ -18,6 +18,18 @@ export const ApiService = {
     return response.json();
   },
 
+  async getWarehouses(): Promise<any[]> {
+    const response = await fetch(`${BASE_URL}/warehouses`);
+    if (!response.ok) throw new Error('Failed to fetch warehouses');
+    return response.json();
+  },
+
+  async syncSheets(): Promise<any> {
+    const response = await fetch(`${BASE_URL}/sheets/sync`, { method: 'POST' });
+    if (!response.ok) throw new Error('Failed to sync sheets');
+    return response.json();
+  },
+
   async getProducts(): Promise<any[]> {
     const response = await fetch(`${BASE_URL}/products`);
     if (!response.ok) throw new Error('Failed to fetch products');
