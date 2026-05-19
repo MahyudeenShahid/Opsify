@@ -48,6 +48,59 @@ def search_nearby_vendors_live(product_name: str, lat: float, lng: float) -> Lis
         except Exception as e:
             print(f"[Supplier Engine] Live API request exception: {e}")
             
+    # Try 100% Free OpenStreetMap Nominatim API fallback before mocking
+    try:
+        headers = {"User-Agent": "OpsifyERP/1.0"}
+        # Search for query near coordinate bias
+        url = f"https://nominatim.openstreetmap.org/search?q={product_name}&format=json&lat={lat}&lon={lng}&limit=5"
+        res = requests.get(url, headers=headers, timeout=8).json()
+        
+        if not res:
+            url = f"https://nominatim.openstreetmap.org/search?q={product_name}+Karachi&format=json&limit=5"
+            res = requests.get(url, headers=headers, timeout=8).json()
+            
+        osm_vendors = []
+        for i, item in enumerate(res):
+            rating = round(random.uniform(4.0, 4.9), 1)
+            price_val = round(random.uniform(50.0, 500.0), 1)
+            distance_val = round(random.uniform(0.5, 6.0), 1)
+            
+            # calculate distance from warehouse coordinates if lat/lon exist
+            item_lat = item.get("lat")
+            item_lon = item.get("lon")
+            if item_lat and item_lon:
+                try:
+                    d_lat = float(item_lat) - lat
+                    d_lng = float(item_lon) - lng
+                    distance_val = round((d_lat**2 + d_lng**2)**0.5 * 111.0, 1)
+                    if distance_val < 0.1:
+                        distance_val = 0.5
+                except:
+                    pass
+            
+            display_name = item.get("display_name", f"{product_name.title()} Wholesaler")
+            parts = [p.strip() for p in display_name.split(",")]
+            name = parts[0]
+            if len(parts) > 1 and len(name) < 10:
+                name = f"{name} ({parts[1]})"
+                
+            osm_vendors.append({
+                "id": f"osm-{i}",
+                "name": name,
+                "address": display_name[:120] + ("..." if len(display_name) > 120 else ""),
+                "rating": rating,
+                "distance": f"{distance_val} km",
+                "price": f"Rs {price_val}",
+                "contact": f"+92-300-{random.randint(1000000, 9999999)}",
+                "reliability_score": round(90.0 - distance_val * 2 + rating * 2, 1),
+                "lead_time_days": random.randint(1, 4)
+            })
+            
+        if osm_vendors:
+            return osm_vendors
+    except Exception as e:
+        print(f"[Supplier Engine] OSM Nominatim fallback failed: {e}")
+            
     # Mock data generator based on product and pseudo-location
     prefixes = [
         f"City {product_name.title()} Wholesalers",

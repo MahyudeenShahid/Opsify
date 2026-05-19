@@ -26,3 +26,4 @@ opsify_business.db
 *.pyc
 __pycache__
 __pycache__ /*
+opsify_business.db

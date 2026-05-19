@@ -24,6 +24,46 @@ export const SupplierManager: React.FC = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [scanComplete, setScanComplete] = useState(false);
   const [scoutSuccessId, setScoutSuccessId] = useState<string | null>(null);
+  const [userLocation, setUserLocation] = useState<{ lat: number, lng: number } | null>(null);
+  const [isFetchingLocation, setIsFetchingLocation] = useState(false);
+
+  const handleNearMePress = () => {
+    setIsFetchingLocation(true);
+    if (!navigator.geolocation) {
+      Alert.alert('Not Supported', 'Geolocation is not supported by your browser/device.');
+      setIsFetchingLocation(false);
+      return;
+    }
+    
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        setUserLocation({ lat: latitude, lng: longitude });
+        setScoutLocation('Locating...');
+        
+        // Reverse geocode completely for free using OSM Nominatim!
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=14`, {
+            headers: { 'User-Agent': 'OpsifyERP/1.0' }
+          });
+          const data = await res.json();
+          const address = data.address || {};
+          const localArea = address.suburb || address.neighbourhood || address.quarter || address.city_district || address.suburb || address.city || 'Near Me';
+          setScoutLocation(localArea);
+        } catch (err) {
+          setScoutLocation('Near Me');
+        } finally {
+          setIsFetchingLocation(false);
+        }
+      },
+      (error) => {
+        setIsFetchingLocation(false);
+        Alert.alert('Location Error', 'Unable to fetch your GPS coordinates. Using Clifton as fallback.');
+        setScoutLocation('Clifton');
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
 
   // Animated Hooks
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -253,12 +293,31 @@ export const SupplierManager: React.FC = () => {
                 <Text style={styles.inputLabel}>TARGET SEARCH GEOGRAPHY (REGION)</Text>
                 <View style={styles.chipsRow}>
                   {['Clifton', 'DHA', 'Gulshan'].map((loc) => (
-                    <TouchableOpacity key={loc} style={[styles.chipButton, scoutLocation === loc && styles.activeChip]} onPress={() => setScoutLocation(loc)}>
+                    <TouchableOpacity key={loc} style={[styles.chipButton, scoutLocation === loc && styles.activeChip]} onPress={() => { setScoutLocation(loc); setUserLocation(null); }}>
                       <Text style={[styles.chipText, scoutLocation === loc && styles.activeChipText]}>
                         📍 {loc}
                       </Text>
                     </TouchableOpacity>
                   ))}
+                  <TouchableOpacity 
+                    style={[
+                      styles.chipButton, 
+                      (scoutLocation !== 'Clifton' && scoutLocation !== 'DHA' && scoutLocation !== 'Gulshan') && styles.activeChip
+                    ]} 
+                    onPress={handleNearMePress}
+                    disabled={isFetchingLocation}
+                  >
+                    {isFetchingLocation ? (
+                      <ActivityIndicator size="small" color="#00FFB0" style={{ marginHorizontal: 12 }} />
+                    ) : (
+                      <Text style={[
+                        styles.chipText, 
+                        (scoutLocation !== 'Clifton' && scoutLocation !== 'DHA' && scoutLocation !== 'Gulshan') && styles.activeChipText
+                      ]}>
+                        🎯 Near Me {scoutLocation !== 'Clifton' && scoutLocation !== 'DHA' && scoutLocation !== 'Gulshan' && scoutLocation !== 'Locating...' ? `(${scoutLocation})` : ''}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
                 </View>
               </View>
 
