@@ -30,6 +30,8 @@ from company_brain.inventory import (
     get_warehouses
 )
 from company_brain.sheets_sync import sync_inventory_to_sheets
+from company_brain.inventory import get_warehouses as _get_warehouses
+import base64
 
 app = FastAPI(title="Opsify AI Orchestrator API", version="2.0.0")
 
@@ -61,6 +63,26 @@ async def api_key_middleware(request: Request, call_next):
     if key != _OPSIFY_API_KEY:
         return JSONResponse(status_code=403, content={"detail": "Invalid or missing X-API-Key header."})
     return await call_next(request)
+
+# ── Location → Warehouse routing map ────────────────────────────────────────
+# Maps customer zone keywords to the nearest Opsify warehouse ID.
+# Warehouse 1 = Alpha Depot (Karachi South/Central), 2 = Beta Hub (Lahore)
+_LOCATION_WAREHOUSE: dict = {
+    "clifton":      1, "dha":         1, "saddar":      1, "pechs":       1,
+    "gulshan":      1, "nazimabad":   1, "korangi":     1, "lyari":       1,
+    "north karachi":1, "malir":       1, "landhi":      1,
+    "lahore":       2, "johar town":  2, "dha lahore":  2, "gulberg":     2,
+}
+
+def _resolve_warehouse(location: str) -> int:
+    """Return the closest warehouse ID for a given location string."""
+    return _LOCATION_WAREHOUSE.get(location.lower().strip(), 1)
+
+
+class VoiceRequest(BaseModel):
+    audio_base64: str          # Base64-encoded audio bytes (WAV/OGG/MP3)
+    mime_type: str = "audio/wav"
+    language_hint: str = "en"  # "en", "ur", "roman_urdu"
 
 class OrderRequest(BaseModel):
     message: str
@@ -121,6 +143,47 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         broker.disconnect(websocket)
 
+async def auto_dispatch_s3(payload: dict):
+    try:
+        from action_brain.riders import allocate_rider
+        from action_brain.state_machine import create_job
+
+        order_id = payload.get("order_id")
+        destination = payload.get("customer_zone", "Clifton")
+        item = payload.get("item", "General")
+        customer_name = payload.get("customer_name", "Autonomous Client")
+        customer_phone = payload.get("customer_phone", "+92-300-8271039")
+
+        await broker.publish("SYSTEM_LOG", "ActionBrain", {
+            "message": f"S2→S3 Auto-Trigger: BUSINESS_DISPATCH_CONFIRMED for {order_id}. Allocating rider to {destination}..."
+        })
+
+        rider = allocate_rider(destination)
+        if "error" in rider:
+            await broker.publish("SYSTEM_LOG", "ActionBrain", {
+                "message": f"Auto-dispatch failed: {rider['error']}"
+            })
+            return
+
+        route = rider["route"]
+        job = create_job(
+            order_id=order_id,
+            rider=rider,
+            destination=destination,
+            route=route,
+            item=item,
+            customer_name=customer_name,
+            customer_phone=customer_phone
+        )
+        
+        await broker.publish("SYSTEM_LOG", "ActionBrain", {
+            "message": f"Auto-dispatched Rider {job['rider_name']} ({job['rider_vehicle']}) for Order {order_id}. Job ID: {job['job_id']}. ETA: {int(route.get('eta_minutes', 0))} min."
+        })
+    except Exception as e:
+        await broker.publish("SYSTEM_LOG", "ActionBrain", {
+            "message": f"Auto-dispatch exception: {str(e)}"
+        })
+
 @app.post("/api/events/publish")
 async def publish_event(req: EventPayload):
     await broker.publish(req.event_type, "External", req.payload)
@@ -133,6 +196,12 @@ async def publish_event(req: EventPayload):
         except AttributeError:
             payload_str = req.json()
         asyncio.create_task(company_graph.run(payload_str))
+        
+    # S2 -> S3 Auto-Trigger
+    if req.event_type == "BUSINESS_DISPATCH_CONFIRMED":
+        payload = req.payload
+        if payload.get("dispatch_status") == "READY":
+            asyncio.create_task(auto_dispatch_s3(payload))
         
     return {"status": "published"}
 
@@ -155,6 +224,9 @@ async def orchestrate_order(req: OrderRequest):
                     
                 price = float(final_state["selected_provider"].get("price_per_hr", 150.0)) * qty
                 
+                # ── Smart warehouse routing: pick nearest depot to customer zone
+                warehouse_id = _resolve_warehouse(intent.get("location", "Unknown"))
+
                 # Emit to Event Broker to let System 2 handle the ledger/bidding!
                 event = EventPayload(
                     event_type="CUSTOMER_ORDER_BOOKED",
@@ -164,7 +236,10 @@ async def orchestrate_order(req: OrderRequest):
                         "quantity": qty,
                         "total_value": price,
                         "provider_id": "System 1 Auth",
-                        "warehouse_id": 1 # Defaulting to Warehouse 1
+                        "warehouse_id": warehouse_id,
+                        "customer_zone": intent.get("location", "Unknown"),
+                        "customer_name": "Autonomous S1 Client",
+                        "customer_phone": "+92-300-8271039",
                     }
                 )
                 await publish_event(event)
@@ -177,6 +252,67 @@ async def orchestrate_order(req: OrderRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/voice/transcribe")
+async def transcribe_voice(req: VoiceRequest):
+    """
+    Voice-to-text transcription endpoint.
+    Accepts base64-encoded audio (WAV/OGG/MP3) and returns the transcribed text.
+    Uses Gemini's multimodal audio capability.
+    Supports English, Urdu, and Roman Urdu (auto-detected).
+    """
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="GEMINI_API_KEY not configured. Set it in your .env file to enable voice transcription."
+        )
+    try:
+        audio_bytes = base64.b64decode(req.audio_base64)
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=api_key)
+
+        lang_prompt = {
+            "ur":          "The audio may be in Urdu. Transcribe exactly.",
+            "roman_urdu":  "The audio may be in Roman Urdu (Urdu written in Latin script). Transcribe exactly.",
+        }.get(req.language_hint, "The audio may be in English, Urdu, or Roman Urdu. Transcribe exactly.")
+
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[
+                types.Part.from_bytes(data=audio_bytes, mime_type=req.mime_type),
+                f"{lang_prompt} Return only the raw transcription text, no formatting.",
+            ],
+        )
+        transcript = response.text.strip()
+        return {"status": "success", "transcript": transcript, "length": len(transcript)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
+
+# ── S1 Provider Directory Endpoints ──────────────────────────────────────────
+from tools.database import get_all_providers, query_mock_provider_db as _search_providers
+
+@app.get("/api/providers")
+def api_list_providers():
+    """Return the full provider registry (33 providers, 7 categories, 9 zones)."""
+    return get_all_providers()
+
+@app.get("/api/providers/search")
+def api_search_providers(category: str, location: str = "Unknown", max_results: int = 10):
+    """
+    Zone-aware provider search with adjacency fallback.
+    Returns providers sorted by rating desc, price asc.
+    """
+    return _search_providers(location=location, category=category, max_results=max_results)
+
+@app.get("/api/providers/categories")
+def api_provider_categories():
+    """Return all available service categories."""
+    from tools.database import MOCK_PROVIDERS
+    cats = sorted({p["category"] for p in MOCK_PROVIDERS})
+    return {"categories": cats}
 
 # --- SYSTEM 2 (COMPANY BRAIN INVENTORY REST API) ---
 @app.get("/api/warehouses")

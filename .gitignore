@@ -24,3 +24,5 @@ mock_google_sheet.csv
 Opsify.db
 opsify_business.db
 *.pyc
+__pycache__
+__pycache__ /*

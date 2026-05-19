@@ -21,6 +21,9 @@ class CompanyBrainGraph:
             qty = float(payload.get("quantity", 1.0))
             sale_price = float(payload.get("total_value", 0.0))
             warehouse_id = int(payload.get("warehouse_id", 1)) # Default to Alpha Depot (1)
+            customer_zone = payload.get("customer_zone", "Unknown")
+            customer_name = payload.get("customer_name", "Anonymous")
+            customer_phone = payload.get("customer_phone", "+92-300-0000000")
             
             dispatch_status = "READY"
             provider_id = payload.get("provider_id", "internal")
@@ -69,7 +72,10 @@ class CompanyBrainGraph:
                 "provider_id": provider_id,
                 "dispatch_status": dispatch_status,
                 "profit_margin": profit_margin,
-                "warehouse_id": warehouse_id
+                "warehouse_id": warehouse_id,
+                "customer_zone": customer_zone,
+                "customer_name": customer_name,
+                "customer_phone": customer_phone
             }
             
             # Broadcast the dispatch event

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, Text, TextInput, TouchableOpacity, View, ActivityIndicator, FlatList, Alert, Animated, Easing } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { Send, Zap, Activity, ScanLine, ShoppingCart, ArrowDownToLine, PackageSearch } from 'lucide-react-native';
+import { Send, Zap, Activity, ScanLine, ShoppingCart, ArrowDownToLine, PackageSearch, Mic, MicOff } from 'lucide-react-native';
 
 import { Theme } from '../core/theme';
 import { ApiService } from '../services/api';
@@ -28,6 +28,9 @@ export const CustomerBrainScreen: React.FC = () => {
   
   const [incompleteOrders, setIncompleteOrders] = useState<IncompleteOrder[]>([]);
   const [isScanning, setIsScanning] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const recordingRef = useRef<any>(null);
+  const micPulse = useRef(new Animated.Value(1)).current;
 
   // Animations
   const headerOpacity = useRef(new Animated.Value(0)).current;
@@ -41,6 +44,78 @@ export const CustomerBrainScreen: React.FC = () => {
 
     handleScanChats();
   }, []);
+
+  const _startMicPulse = () => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(micPulse, { toValue: 1.3, duration: 500, useNativeDriver: true }),
+        Animated.timing(micPulse, { toValue: 1.0, duration: 500, useNativeDriver: true }),
+      ])
+    ).start();
+  };
+
+  const handleVoice = async () => {
+    try {
+      const { Audio } = await import('expo-av');
+      if (isRecording && recordingRef.current) {
+        // ── Stop & transcribe ────────────────────────────────────────────
+        setIsRecording(false);
+        micPulse.stopAnimation();
+        micPulse.setValue(1);
+        setStatus('Transcribing voice...');
+        await recordingRef.current.stopAndUnloadAsync();
+        const uri = recordingRef.current.getURI();
+        recordingRef.current = null;
+        if (!uri) return;
+
+        const response = await fetch(uri);
+        const blob = await response.blob();
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          const base64 = (reader.result as string).split(',')[1];
+          try {
+            const result = await fetch(
+              'http://localhost:8000/api/voice/transcribe',
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ audio_base64: base64, mime_type: 'audio/wav', language_hint: 'en' }),
+              }
+            );
+            const data = await result.json();
+            if (data.transcript) {
+              setMessage(data.transcript);
+              setStatus('Voice transcribed ✅');
+            } else {
+              setStatus('Could not transcribe audio. Please try again.');
+            }
+          } catch (e: any) {
+            setStatus(`Transcription error: ${e.message}`);
+          }
+        };
+        reader.readAsDataURL(blob);
+
+      } else {
+        // ── Start recording ──────────────────────────────────────────────
+        const perm = await Audio.requestPermissionsAsync();
+        if (!perm.granted) {
+          Alert.alert('Microphone Permission', 'Please allow microphone access in device settings.');
+          return;
+        }
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+        const { recording } = await Audio.Recording.createAsync(
+          Audio.RecordingOptionsPresets.HIGH_QUALITY
+        );
+        recordingRef.current = recording;
+        setIsRecording(true);
+        setStatus('Recording... tap mic to stop.');
+        _startMicPulse();
+      }
+    } catch (e: any) {
+      setIsRecording(false);
+      setStatus(`Voice error: ${e.message}`);
+    }
+  };
 
   const handleSend = async () => {
     if (!message.trim()) return;
@@ -143,6 +218,15 @@ export const CustomerBrainScreen: React.FC = () => {
           onChangeText={setMessage}
           onSubmitEditing={handleSend}
         />
+        {/* Voice Input Button */}
+        <Animated.View style={{ transform: [{ scale: micPulse }] }}>
+          <TouchableOpacity
+            style={[styles.micButton, isRecording && styles.micButtonActive]}
+            onPress={handleVoice}
+          >
+            {isRecording ? <MicOff color="#FF4444" size={18} /> : <Mic color={Theme.colors.textMuted} size={18} />}
+          </TouchableOpacity>
+        </Animated.View>
         <TouchableOpacity style={styles.sendButton} onPress={handleSend} disabled={isLoading}>
           {isLoading ? <ActivityIndicator color="#000" /> : <Send color="#000" size={20} />}
         </TouchableOpacity>
@@ -254,6 +338,8 @@ const styles = StyleSheet.create({
   
   inputCard: { flexDirection: 'row', backgroundColor: Theme.colors.surface, borderRadius: Theme.borderRadius.lg, padding: 6, borderWidth: 1, borderColor: Theme.colors.border, marginBottom: Theme.spacing.lg, ...Theme.shadows.glass },
   input: { flex: 1, height: 48, paddingHorizontal: Theme.spacing.md, color: '#FFF', fontSize: 15 },
+  micButton: { width: 40, height: 48, alignItems: 'center', justifyContent: 'center', marginRight: 4 },
+  micButtonActive: { backgroundColor: 'rgba(255,68,68,0.1)', borderRadius: Theme.borderRadius.md },
   sendButton: { width: 48, height: 48, borderRadius: Theme.borderRadius.md, backgroundColor: Theme.colors.primary, alignItems: 'center', justifyContent: 'center' },
   
   scanSection: { flex: 0.6, marginBottom: Theme.spacing.md },

@@ -3,11 +3,16 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator,
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Mail, Lock, User, Globe, ChevronRight } from 'lucide-react-native';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
 
 import { Theme } from '../core/theme';
 import { auth } from '../config/firebaseConfig';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, signInWithCredential } from 'firebase/auth';
 import { FirebaseChatService } from '../services/firebaseChatService';
+
+// Complete Expo-based Auth session redirect listener
+WebBrowser.maybeCompleteAuthSession();
 
 export const AuthScreen = ({ onDemoLogin }: { onDemoLogin: () => void }) => {
   const [email, setEmail] = useState('');
@@ -15,6 +20,37 @@ export const AuthScreen = ({ onDemoLogin }: { onDemoLogin: () => void }) => {
   const [name, setName] = useState('');
   const [isLogin, setIsLogin] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Configure Google Sign-In requests for native targets
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
+    clientId: '702938173491-example.apps.googleusercontent.com', // Placeholder Client ID
+    iosClientId: '702938173491-example-ios.apps.googleusercontent.com',
+    androidClientId: '702938173491-example-android.apps.googleusercontent.com',
+  });
+
+  // Watch for successful native Google authentication redirects
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { id_token } = response.params;
+      const credential = GoogleAuthProvider.credential(id_token);
+      
+      setIsLoading(true);
+      signInWithCredential(auth, credential)
+        .then(async (result) => {
+          await FirebaseChatService.createUser(
+            result.user.uid, 
+            result.user.displayName || 'Google User', 
+            result.user.email || ''
+          );
+        })
+        .catch((err) => {
+          Alert.alert('Native Google Sign-In Failure', err.message);
+        })
+        .finally(() => {
+          setIsLoading(false);
+        });
+    }
+  }, [response]);
 
   // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;

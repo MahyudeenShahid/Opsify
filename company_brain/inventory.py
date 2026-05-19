@@ -268,98 +268,191 @@ def get_transactions() -> List[Dict[str, Any]]:
 
 def get_demand_predictions() -> List[Dict[str, Any]]:
     """
-    Computes daily sales velocity per product & warehouse over the last 30 days,
-    and returns predictions and stock-out dates.
+    ML-grade demand forecasting using Single Exponential Smoothing (SES) on weekly buckets.
+
+    Algorithm:
+    - Split last 90 days of sales into 13 weekly buckets
+    - Apply SES with alpha=0.4 (recent weeks weighted more than older ones)
+    - Compute smoothed daily velocity from final smoothed weekly value
+    - Derive stock-out date and 30-day demand estimate
+    - Include trend direction and confidence level
+
+    No external ML libraries required — pure Python.
     """
+    from datetime import date
+
     conn = get_db_connection()
     cursor = conn.cursor()
-    
-    thirty_days_ago = (datetime.now() - timedelta(days=30)).isoformat()
-    
-    # Calculate velocity: total quantity sold in last 30 days / 30
+
+    ninety_days_ago = (datetime.now() - timedelta(days=90)).isoformat()
+
+    # Fetch all sales per product/warehouse in last 90 days with day-level granularity
     cursor.execute("""
-        SELECT pw.product_id, pw.warehouse_id, p.name as product_name, w.name as warehouse_name, 
-               pw.stock, p.unit, COALESCE(SUM(t.quantity), 0) as total_sold
+        SELECT pw.product_id, pw.warehouse_id, p.name AS product_name,
+               w.name AS warehouse_name, pw.stock, p.unit,
+               t.timestamp, t.quantity
         FROM product_warehouses pw
         JOIN products p ON pw.product_id = p.id
         JOIN warehouses w ON pw.warehouse_id = w.id
-        LEFT JOIN transactions t ON pw.product_id = t.product_id 
-             AND pw.warehouse_id = t.warehouse_id 
-             AND t.type = 'SALE' 
+        LEFT JOIN transactions t ON pw.product_id = t.product_id
+             AND pw.warehouse_id = t.warehouse_id
+             AND t.type = 'SALE'
              AND t.timestamp >= ?
-        GROUP BY pw.product_id, pw.warehouse_id
-    """, (thirty_days_ago,))
-    
+        GROUP BY pw.product_id, pw.warehouse_id, t.id
+    """, (ninety_days_ago,))
+
     rows = cursor.fetchall()
     conn.close()
-    
-    predictions = []
+
+    # Aggregate by (product_id, warehouse_id)
+    from collections import defaultdict
+    products: Dict[tuple, dict] = {}
+    weekly_sales: Dict[tuple, list] = defaultdict(lambda: [0.0] * 13)  # 13 weeks
+
+    today = datetime.now()
+
     for r in rows:
-        stock = r["stock"]
-        total_sold = r["total_sold"]
-        daily_velocity = total_sold / 30.0
-        
-        # Avoid division by zero, use a minimal baseline if no sales yet
-        if daily_velocity == 0:
-            daily_velocity = 0.5 # Default heuristic
-            
-        days_remaining = stock / daily_velocity
-        stock_out_date = (datetime.now() + timedelta(days=days_remaining)).strftime("%Y-%m-%d")
-        
+        key = (r["product_id"], r["warehouse_id"])
+        if key not in products:
+            products[key] = {
+                "product_id":   r["product_id"],
+                "product_name": r["product_name"],
+                "warehouse_name": r["warehouse_name"],
+                "current_stock": r["stock"],
+                "unit": r["unit"],
+            }
+        if r["timestamp"] and r["quantity"]:
+            try:
+                tx_date = datetime.fromisoformat(r["timestamp"])
+                days_ago = (today - tx_date).days
+                week_idx = min(int(days_ago // 7), 12)   # 0 = most recent week
+                bucket   = 12 - week_idx                  # reverse: index 0 = oldest
+                weekly_sales[key][bucket] += r["quantity"]
+            except Exception:
+                pass
+
+    predictions = []
+    ALPHA = 0.4   # SES smoothing factor: higher = more weight on recent data
+
+    for key, meta in products.items():
+        weeks = weekly_sales[key]
+
+        # Single Exponential Smoothing
+        non_zero = [w for w in weeks if w > 0]
+        if non_zero:
+            smoothed = weeks[0]
+            for w in weeks[1:]:
+                smoothed = ALPHA * w + (1 - ALPHA) * smoothed
+            daily_velocity = smoothed / 7.0
+
+            # Trend: compare last 4 weeks vs previous 4 weeks
+            recent_avg = sum(weeks[9:13]) / 4.0
+            older_avg  = sum(weeks[5:9])  / 4.0
+            if older_avg > 0:
+                trend_pct = ((recent_avg - older_avg) / older_avg) * 100
+                trend = "UP" if trend_pct > 5 else "DOWN" if trend_pct < -5 else "STABLE"
+            else:
+                trend = "STABLE"
+                trend_pct = 0.0
+
+            confidence = "HIGH" if len(non_zero) >= 6 else "MEDIUM" if len(non_zero) >= 3 else "LOW"
+        else:
+            # No historical sales — use minimal baseline
+            daily_velocity = 0.5
+            trend = "STABLE"
+            trend_pct = 0.0
+            confidence = "LOW"
+
+        stock = meta["current_stock"]
+        days_remaining = stock / daily_velocity if daily_velocity > 0 else 9999
+        stock_out_date = (today + timedelta(days=days_remaining)).strftime("%Y-%m-%d")
+
         predictions.append({
-            "product_id": r["product_id"],
-            "product_name": r["product_name"],
-            "warehouse_name": r["warehouse_name"],
-            "current_stock": stock,
-            "unit": r["unit"],
-            "daily_velocity": round(daily_velocity, 2),
-            "days_remaining": round(days_remaining, 1),
-            "stock_out_date": stock_out_date,
-            "predicted_demand_30d": round(daily_velocity * 30, 1)
+            "product_id":         meta["product_id"],
+            "name":               meta["product_name"],
+            "warehouse_name":     meta["warehouse_name"],
+            "current_stock":      round(stock, 2),
+            "unit":               meta["unit"],
+            "daily_velocity":     round(daily_velocity, 2),
+            "days_remaining":     round(min(days_remaining, 9999), 1),
+            "estimated_stockout_date": stock_out_date,
+            "predicted_demand_30d":   round(daily_velocity * 30, 1),
+            "trend":              trend,
+            "trend_pct":          round(trend_pct, 1),
+            "confidence":         confidence,
+            "forecast_model":     "SES_alpha0.4",
         })
-        
+
     return predictions
+
 
 def get_reorder_suggestions() -> List[Dict[str, Any]]:
     """
-    Checks which products in which warehouses have dropped below their reorder threshold
-    and returns restocking recommendations.
+    AI-grade reorder suggestions combining:
+    - Stock below threshold detection
+    - Lead-time demand calculation (how much will sell while waiting for restock)
+    - 20% safety buffer on top
+    - Urgency ladder: CRITICAL / HIGH / MEDIUM based on days-of-stock remaining
     """
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+
     cursor.execute("""
-        SELECT pw.product_id, pw.warehouse_id, p.name as product_name, w.name as warehouse_name,
-               pw.stock, pw.reorder_threshold, s.name as supplier_name, s.lead_time_days
+        SELECT pw.product_id, pw.warehouse_id, p.name AS product_name,
+               w.name AS warehouse_name, pw.stock, pw.reorder_threshold,
+               s.name AS supplier_name, s.lead_time_days
         FROM product_warehouses pw
         JOIN products p ON pw.product_id = p.id
         JOIN warehouses w ON pw.warehouse_id = w.id
         LEFT JOIN suppliers s ON p.supplier_id = s.id
         WHERE pw.stock <= pw.reorder_threshold
     """)
-    
+
     rows = cursor.fetchall()
     conn.close()
-    
+
     suggestions = []
     for r in rows:
         lead_time = r["lead_time_days"] or 3
-        # Suggest restocking amount to double the threshold as a safe buffer
-        suggested_qty = r["reorder_threshold"] * 2
-        
+        stock     = r["stock"]
+        threshold = r["reorder_threshold"]
+
+        # Lead-time demand + 20% safety buffer
+        daily_baseline = max(threshold / 7.0, 0.5)   # rough velocity estimate
+        lead_demand    = daily_baseline * lead_time
+        suggested_qty  = round((lead_demand + threshold) * 1.2, 1)
+        days_of_stock  = stock / daily_baseline if daily_baseline > 0 else 0
+
+        if stock == 0:
+            urgency = "CRITICAL"
+        elif days_of_stock <= lead_time:
+            urgency = "HIGH"
+        else:
+            urgency = "MEDIUM"
+
         suggestions.append({
-            "product_id": r["product_id"],
-            "product_name": r["product_name"],
-            "warehouse_name": r["warehouse_name"],
-            "current_stock": r["stock"],
-            "threshold": r["reorder_threshold"],
-            "supplier_name": r["supplier_name"] or "Default Supplier",
-            "lead_time_days": lead_time,
+            "product_id":         r["product_id"],
+            "product_name":       r["product_name"],
+            "warehouse_name":     r["warehouse_name"],
+            "current_stock":      round(stock, 2),
+            "threshold":          threshold,
+            "supplier_name":      r["supplier_name"] or "Default Supplier",
+            "lead_time_days":     lead_time,
+            "days_of_stock_remaining": round(days_of_stock, 1),
             "suggested_reorder_qty": suggested_qty,
-            "urgency": "HIGH" if r["stock"] == 0 else "MEDIUM"
+            "urgency":            urgency,
+            "message":            (
+                f"[{urgency}] {r['product_name']} at {r['warehouse_name']}: "
+                f"{stock} left, {lead_time}d lead time. "
+                f"Order {suggested_qty} units from {r['supplier_name'] or 'supplier'}."
+            ),
         })
-        
+
+    # Sort by urgency: CRITICAL first
+    urgency_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2}
+    suggestions.sort(key=lambda x: urgency_order.get(x["urgency"], 3))
     return suggestions
+
 
 def add_supplier(name: str, contact: str, rating: float, reliability_score: float, lead_time_days: int) -> Dict[str, Any]:
     conn = get_db_connection()

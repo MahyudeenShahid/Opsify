@@ -8,6 +8,7 @@ import {
   Navigation, Truck, CheckCircle, Clock, Radio, Package,
   MapPin, Zap, RefreshCw, ChevronRight, User, Phone,
 } from 'lucide-react-native';
+import Svg, { Circle, Line, Rect, G, Text as SvgText } from 'react-native-svg';
 import { Theme } from '../core/theme';
 import { ApiService } from '../services/api';
 
@@ -86,6 +87,93 @@ const pipeline = StyleSheet.create({
   nodeLabel:   { fontSize: 8.5, fontWeight: '700', color: Theme.colors.textMuted, textAlign: 'center', letterSpacing: 0.2 },
 });
 
+// ─── Rider Geolocation MiniMap ──────────────────────────────────────────────
+const RiderMiniMap: React.FC<{ job: any }> = ({ job }) => {
+  const route = job.route || {};
+  const origin = route.origin || { lat: 24.8138, lng: 67.0366 };
+  const dest = route.destination || { lat: 24.8155, lng: 67.0327 };
+
+  // Calculate scaling factors so the route coordinates fit perfectly inside the SVG box
+  const minLat = Math.min(origin.lat, dest.lat) - 0.005;
+  const maxLat = Math.max(origin.lat, dest.lat) + 0.005;
+  const minLng = Math.min(origin.lng, dest.lng) - 0.005;
+  const maxLng = Math.max(origin.lng, dest.lng) + 0.005;
+
+  const mapX = (lng: number) => {
+    const range = maxLng - minLng;
+    return range === 0 ? 150 : 30 + ((lng - minLng) / range) * 240;
+  };
+  const mapY = (lat: number) => {
+    const range = maxLat - minLat;
+    return range === 0 ? 60 : 100 - ((lat - minLat) / range) * 80;
+  };
+
+  const x1 = mapX(origin.lng);
+  const y1 = mapY(origin.lat);
+  const x2 = mapX(dest.lng);
+  const y2 = mapY(dest.lat);
+
+  // Compute animated progress along the path based on job lifecycle status
+  let progress = 0;
+  if (job.status === 'EN_ROUTE') progress = 0.5;
+  else if (['ARRIVED', 'JOB_STARTED', 'JOB_COMPLETED'].includes(job.status)) progress = 1.0;
+
+  const rx = x1 + (x2 - x1) * progress;
+  const ry = y1 + (y2 - y1) * progress;
+
+  return (
+    <View style={styles.mapWrapper}>
+      <View style={styles.mapHeaderRow}>
+        <Text style={styles.mapLabel}>🛰️ LIVE GEOLOCATION ENGINE</Text>
+        <Text style={styles.mapSubLabel}>{route.source || 'Haversine Engine'}</Text>
+      </View>
+      <View style={styles.mapCanvas}>
+        <Svg width="100%" height={110} viewBox="0 0 300 120">
+          {/* Cyber grid background */}
+          <Rect x="0" y="0" width="300" height="120" rx={Theme.borderRadius.md} fill="#0A0B10" />
+          <Line x1="50" y1="0" x2="50" y2="120" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
+          <Line x1="100" y1="0" x2="100" y2="120" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
+          <Line x1="150" y1="0" x2="150" y2="120" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
+          <Line x1="200" y1="0" x2="200" y2="120" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
+          <Line x1="250" y1="0" x2="250" y2="120" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
+          
+          <Line x1="0" y1="30" x2="300" y2="30" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
+          <Line x1="0" y1="60" x2="300" y2="60" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
+          <Line x1="0" y1="90" x2="300" y2="90" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
+
+          {/* Route path line */}
+          <Line
+            x1={x1}
+            y1={y1}
+            x2={x2}
+            y2={y2}
+            stroke={Theme.colors.primary}
+            strokeWidth="2.5"
+            strokeDasharray="4,4"
+          />
+
+          {/* Origin Depot Marker */}
+          <Circle cx={x1} cy={y1} r="7" fill={Theme.colors.secondary} opacity={0.3} />
+          <Circle cx={x1} cy={y1} r="4" fill={Theme.colors.secondary} />
+          <SvgText x={x1 - 15} y={y1 - 10} fill={Theme.colors.secondary} fontSize="8" fontWeight="bold">DEPOT</SvgText>
+
+          {/* Destination Customer Marker */}
+          <Circle cx={x2} cy={y2} r="9" fill={Theme.colors.success} opacity={0.2} />
+          <Circle cx={x2} cy={y2} r="5" fill={Theme.colors.success} />
+          <SvgText x={x2 - 15} y={y2 + 16} fill={Theme.colors.success} fontSize="8" fontWeight="bold">CLIENT</SvgText>
+
+          {/* Pulsing Active Rider Vehicle */}
+          <G>
+            <Circle cx={rx} cy={ry} r="8" fill={Theme.colors.warning} opacity={0.4} />
+            <Circle cx={rx} cy={ry} r="5" fill={Theme.colors.warning} />
+            <SvgText x={rx - 12} y={ry - 8} fill={Theme.colors.warning} fontSize="7" fontWeight="bold">RIDER</SvgText>
+          </G>
+        </Svg>
+      </View>
+    </View>
+  );
+};
+
 // ─── Job Card ────────────────────────────────────────────────────────────────
 const JobCard: React.FC<{ job: any; onAdvance: () => void; isAdvancing: boolean }> = ({ job, onAdvance, isAdvancing }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -121,6 +209,9 @@ const JobCard: React.FC<{ job: any; onAdvance: () => void; isAdvancing: boolean 
 
       {/* State Pipeline */}
       <StatePipeline currentStatus={job.status} />
+
+      {/* Geolocation Map Rendering */}
+      <RiderMiniMap job={job} />
 
       {/* Route Intelligence */}
       <View style={styles.routeCard}>
@@ -438,6 +529,13 @@ const styles = StyleSheet.create({
   jobIdText:      { color: Theme.colors.text, fontSize: 16, fontWeight: '900', letterSpacing: -0.3 },
   statusBadge:    { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 5, borderRadius: Theme.borderRadius.pill, borderWidth: 1.5, gap: 5 },
   statusBadgeText:{ fontSize: 11, fontWeight: '800' },
+
+  // Rider MiniMap Styles
+  mapWrapper:     { marginBottom: Theme.spacing.md, backgroundColor: 'rgba(255,255,255,0.02)', borderWidth: 1.5, borderColor: Theme.colors.border, borderRadius: Theme.borderRadius.md, overflow: 'hidden' },
+  mapHeaderRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Theme.spacing.sm, paddingVertical: 6, backgroundColor: 'rgba(255,255,255,0.03)', borderBottomWidth: 1, borderBottomColor: Theme.colors.border },
+  mapLabel:       { color: Theme.colors.textMuted, fontSize: 8.5, fontWeight: '800', letterSpacing: 0.8 },
+  mapSubLabel:    { color: Theme.colors.primary, fontSize: 8.5, fontWeight: '700', letterSpacing: 0.2 },
+  mapCanvas:      { width: '100%', overflow: 'hidden' },
 
   // Route Card
   routeCard:      { position: 'relative', borderRadius: Theme.borderRadius.md, borderWidth: 1, borderColor: 'rgba(112,0,255,0.3)', padding: Theme.spacing.md, marginBottom: Theme.spacing.md, overflow: 'hidden' },
