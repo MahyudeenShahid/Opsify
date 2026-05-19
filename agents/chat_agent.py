@@ -289,15 +289,30 @@ def run_chat(messages: List[Dict[str, str]]) -> Dict[str, Any]:
                                 print(f"[OpsBot] Model {model_name} exhausted after {max_retries} attempts: {msg}")
                                 # Try next model in priority list
                                 break
+                        elif 'UNAVAILABLE' in msg or '503' in msg:
+                            delay = min(30, (2 ** attempt))
+                            print(f"[OpsBot] Model {model_name} unavailable (503), retrying in {delay}s...")
+                            if attempt < max_retries - 1:
+                                time.sleep(delay)
+                                continue
+                            else:
+                                print(f"[OpsBot] Model {model_name} unavailable after {max_retries} attempts: {msg}")
+                                break
                         else:
                             # Non-quota error for this model — skip to next model
                             print(f"[OpsBot] Model {model_name} error: {e}")
                             break
 
-                if response is not None:
+                if response is not None and getattr(response, 'candidates', None):
                     candidate = response.candidates[0]
-                    print(f"[OpsBot] Using model: {used_model}")
-                    break
+                    if candidate is None or getattr(candidate, 'content', None) is None:
+                        print(f"[OpsBot] Model {model_name} returned empty candidate content.")
+                        candidate = None
+                    else:
+                        print(f"[OpsBot] Using model: {used_model}")
+                        break
+                elif response is not None:
+                    print(f"[OpsBot] Model {model_name} returned no candidates.")
 
             if candidate is None:
                 # No model produced a response — fall back
@@ -305,11 +320,12 @@ def run_chat(messages: List[Dict[str, str]]) -> Dict[str, Any]:
                 return _fallback_response(messages)
             
             # Check for function calls
-            fn_calls = [p for p in candidate.content.parts if p.function_call]
+            parts = candidate.content.parts or []
+            fn_calls = [p for p in parts if getattr(p, 'function_call', None)]
             
             if not fn_calls:
                 # Final text response
-                text = "".join(p.text for p in candidate.content.parts if p.text)
+                text = "".join(p.text for p in parts if getattr(p, 'text', None))
                 return {"text": text, "action_card": action_card}
             
             # Execute each function call
