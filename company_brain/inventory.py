@@ -97,21 +97,20 @@ def init_db():
         wh_beta = cursor.lastrowid
 
         cursor.executemany("INSERT INTO suppliers (name, contact, rating, reliability_score, lead_time_days) VALUES (?, ?, ?, ?, ?)", [
-            ("Malir Organic Farm Cooperative", "sales@malirfarm.org", 4.8, 95.0, 1),
-            ("Super Highway Sabzi Mandi", "info@sabzimandi.com", 4.5, 88.0, 2),
-            ("Kathore Mango Orchards", "orders@kathore.pk", 4.9, 98.0, 3),
-            ("Hub River Vegetable Hub", "contact@hubveggie.pk", 4.2, 82.0, 2)
+            ("Dairy Central", "info@dairy.com", 4.8, 95.0, 3),
+            ("BuildMart", "sales@buildmart.com", 4.5, 88.0, 4),
+            ("Speedy Supply", "fast@speedy.com", 4.0, 90.0, 1),
+            ("Discount Depot", "cheap@discount.com", 3.2, 70.0, 5)
         ])
         
         cursor.executemany("""
             INSERT INTO products (sku, name, category, variant, unit, cost_price, selling_price, supplier_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, [
-            ("TOM-001", "Organic Tomatoes", "Vegetables", "Red Round", "Kilograms", 40.0, 60.0, 1),
-            ("MNG-001", "Sindhri Mangoes", "Fruits", "A-Grade", "Kilograms", 120.0, 180.0, 3),
-            ("ONN-001", "Red Onions", "Vegetables", "Medium", "Kilograms", 30.0, 50.0, 2),
-            ("POT-001", "Fresh Potatoes", "Vegetables", "Organic Russet", "Kilograms", 25.0, 45.0, 4),
-            ("SPN-001", "Spinach Bunches", "Herbs", "Fresh Green", "Bunches", 15.0, 25.0, 1)
+            ("MLK-001", "Milk", "Dairy", "Full Cream", "Liters", 100.0, 150.0, 1),
+            ("WR-001", "Wire", "Hardware", "10 Gauge Copper", "Meters", 30.0, 45.0, 2),
+            ("PP-001", "Pipe", "Hardware", "PVC 2 inch", "Pieces", 80.0, 120.0, 2),
+            ("BKR-001", "Bread", "Bakery", "Whole Wheat", "Loaves", 40.0, 60.0, 1)
         ])
         
         # Seed initial stock into Alpha and Beta warehouses
@@ -119,12 +118,11 @@ def init_db():
             INSERT INTO product_warehouses (product_id, warehouse_id, stock, reorder_threshold)
             VALUES (?, ?, ?, ?)
         """, [
-            (1, wh_alpha, 450.0, 50.0), # Tomatoes in Alpha
-            (1, wh_beta, 200.0, 50.0),
-            (2, wh_alpha, 600.0, 100.0), # Mangoes in Alpha
-            (3, wh_alpha, 350.0, 50.0),  # Onions in Alpha
-            (4, wh_alpha, 500.0, 80.0),  # Potatoes in Alpha
-            (5, wh_alpha, 45.0, 80.0)    # Spinach in Alpha (breaches 80 threshold to show reorder state!)
+            (1, wh_alpha, 25.0, 5.0), # Milk in Alpha
+            (1, wh_beta, 10.0, 5.0),  # Milk in Beta
+            (2, wh_alpha, 100.0, 15.0),
+            (3, wh_beta, 50.0, 10.0),
+            (4, wh_alpha, 15.0, 20.0)
         ])
         
         thirty_days_ago = (datetime.now() - timedelta(days=30)).isoformat()
@@ -132,9 +130,8 @@ def init_db():
             INSERT INTO transactions (product_id, warehouse_id, type, reason, quantity, total_value, timestamp)
             VALUES (?, ?, 'SALE', NULL, ?, ?, ?)
         """, [
-            (1, wh_alpha, 120.0, 7200.0, thirty_days_ago),
-            (2, wh_alpha, 250.0, 45000.0, thirty_days_ago),
-            (5, wh_alpha, 90.0, 2250.0, thirty_days_ago)
+            (1, wh_alpha, 30.0, 4500.0, thirty_days_ago),
+            (4, wh_alpha, 45.0, 2700.0, thirty_days_ago)
         ])
         
     conn.commit()

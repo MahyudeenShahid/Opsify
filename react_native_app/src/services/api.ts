@@ -233,11 +233,14 @@ export const ApiService = {
     return response.json();
   },
 
-  async sendChatMessage(messages: { role: 'user' | 'assistant'; content: string }[]): Promise<any> {
+  async sendChatMessage(messages: { role: 'user' | 'assistant'; content: string }[], userId?: string): Promise<any> {
+    const body: any = { messages };
+    if (userId) body.user_id = userId;
+
     const response = await fetch(`${BASE_URL}/chat`, {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ messages }),
+      body: JSON.stringify(body),
     });
     if (!response.ok) {
       const err = await response.json();

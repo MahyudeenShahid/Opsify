@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 
 from broker.event_broker import broker
-from company_brain.inventory import init_db
+from company_brain.firestore_inventory import init_db
 from company_brain.graph import CompanyBrainGraph
 
 app = FastAPI(title="Opsify AI Orchestrator API", version="2.0.0")

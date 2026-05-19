@@ -24,7 +24,7 @@ export const ChatListScreen = ({ currentUserId, onSelectChat, onNewChat }: { cur
 
   const filteredChats = chats.filter(chat => {
     const otherUser = chat.users?.[0];
-    return otherUser?.name.toLowerCase().includes(searchQuery.toLowerCase()) || otherUser?.phoneNumber.includes(searchQuery);
+    return otherUser?.name.toLowerCase().includes(searchQuery.toLowerCase()) || otherUser?.email.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
   const renderChatItem = ({ item, index }: { item: Chat, index: number }) => {

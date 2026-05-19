@@ -2,14 +2,20 @@
 #
 # ## Purpose
 # Job State Machine: manages lifecycle of dispatched jobs through 5 sequential states.
-# Jobs are persisted to the SQLite database so they survive server restarts.
+# Jobs are persisted to Firestore so they survive server restarts.
 # Rider availability is updated atomically with job state transitions.
 
 import uuid
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
-from action_brain.db import get_jobs_db
+from action_brain.firestore_db import (
+    create_job_record,
+    get_job_record,
+    list_job_records,
+    save_job_record,
+    set_rider_status,
+)
 
 
 JOB_STATES = [
@@ -35,9 +41,8 @@ def create_job(
     customer_phone: str,
 ) -> Dict[str, Any]:
     """
-    Create a new dispatch job, persist it to SQLite, and mark the rider as BUSY.
+    Create a new dispatch job, persist it to Firestore, and mark the rider as BUSY.
     """
-    import json
     job_id = f"JOB-{uuid.uuid4().hex[:6].upper()}"
     now    = _now_utc()
 
@@ -63,25 +68,8 @@ def create_job(
         "updated_at":       now,
     }
 
-    conn = get_jobs_db()
-    conn.execute(
-        """INSERT INTO jobs
-           (job_id, order_id, rider_id, rider_name, rider_phone, rider_vehicle,
-            rider_rating, destination_zone, item, customer_name, customer_phone,
-            route_json, status, status_index, timeline_json, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (
-            job["job_id"], job["order_id"], job["rider_id"], job["rider_name"],
-            job["rider_phone"], job["rider_vehicle"], job["rider_rating"],
-            job["destination_zone"], job["item"], job["customer_name"],
-            job["customer_phone"], json.dumps(route), job["status"],
-            job["status_index"], json.dumps(timeline), now, now,
-        ),
-    )
-    # Mark rider as BUSY
-    conn.execute("UPDATE riders SET status='BUSY' WHERE rider_id=?", (rider["id"],))
-    conn.commit()
-    conn.close()
+    create_job_record(job)
+    set_rider_status(rider["id"], "BUSY")
 
     return job
 
@@ -90,57 +78,47 @@ def advance_job(job_id: str) -> Dict[str, Any]:
     """
     Advance a job to the next state. If JOB_COMPLETED, mark rider FREE.
     """
-    import json
-    conn = get_jobs_db()
-    row = conn.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
+    row = get_job_record(job_id)
     if not row:
-        conn.close()
         return {"error": f"Job {job_id} not found."}
 
     current_idx = row["status_index"]
     if current_idx >= len(JOB_STATES) - 1:
-        conn.close()
         return {"error": f"Job {job_id} is already COMPLETED.", "job": _row_to_job(row)}
 
     next_idx    = current_idx + 1
     next_status = JOB_STATES[next_idx]
     now         = _now_utc()
 
-    timeline = json.loads(row["timeline_json"])
+    timeline = list(row.get("timeline", []))
     timeline.append({"state": next_status, "timestamp": now})
 
-    conn.execute(
-        "UPDATE jobs SET status=?, status_index=?, timeline_json=?, updated_at=? WHERE job_id=?",
-        (next_status, next_idx, json.dumps(timeline), now, job_id),
-    )
+    row["status"] = next_status
+    row["status_index"] = next_idx
+    row["timeline"] = timeline
+    row["updated_at"] = now
+    save_job_record(row)
 
     # Free the rider when job is done
     if next_status == "JOB_COMPLETED":
-        conn.execute("UPDATE riders SET status='AVAILABLE' WHERE rider_id=?", (row["rider_id"],))
+        set_rider_status(row["rider_id"], "AVAILABLE")
 
-    conn.commit()
-
-    updated = conn.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
-    conn.close()
-    return _row_to_job(updated)
+    updated = get_job_record(job_id)
+    return _row_to_job(updated) if updated else {"error": f"Job {job_id} not found."}
 
 
 def get_job(job_id: str) -> Optional[Dict[str, Any]]:
-    conn = get_jobs_db()
-    row = conn.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
-    conn.close()
+    row = get_job_record(job_id)
     return _row_to_job(row) if row else None
 
 
 def list_jobs() -> List[Dict[str, Any]]:
-    conn = get_jobs_db()
-    rows = conn.execute("SELECT * FROM jobs ORDER BY created_at DESC").fetchall()
-    conn.close()
-    return [_row_to_job(r) for r in rows]
+    return [_row_to_job(r) for r in list_job_records()]
 
 
 def _row_to_job(row) -> Dict[str, Any]:
-    import json
+    if not row:
+        return {}
     return {
         "job_id":           row["job_id"],
         "order_id":         row["order_id"],
@@ -153,10 +131,10 @@ def _row_to_job(row) -> Dict[str, Any]:
         "item":             row["item"],
         "customer_name":    row["customer_name"],
         "customer_phone":   row["customer_phone"],
-        "route":            json.loads(row["route_json"]),
+        "route":            row.get("route", {}),
         "status":           row["status"],
         "status_index":     row["status_index"],
-        "timeline":         json.loads(row["timeline_json"]),
+        "timeline":         row.get("timeline", []),
         "created_at":       row["created_at"],
         "updated_at":       row["updated_at"],
     }

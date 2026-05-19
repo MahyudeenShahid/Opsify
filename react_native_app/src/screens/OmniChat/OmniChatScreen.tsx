@@ -10,20 +10,20 @@ type Screen = 'list' | 'room' | 'new-chat';
 export const OmniChatScreen = ({ currentUserId }: { currentUserId: string }) => {
   const [screen, setScreen] = useState<Screen>('list');
   const [selectedChat, setSelectedChat] = useState<{ chat: Chat; otherUser: User } | null>(null);
-  const [searchPhone, setSearchPhone] = useState('');
+  const [searchEmail, setSearchEmail] = useState('');
   const [isSearching, setIsSearching] = useState(false);
 
   if (!currentUserId) return null;
 
-  // ── New Chat: phone number search ─────────────────────────────────────────
+  // ── New Chat: email search ────────────────────────────────────────────────
   if (screen === 'new-chat') {
     const handleSearch = async () => {
-      if (!searchPhone.trim()) return;
+      if (!searchEmail.trim()) return;
       setIsSearching(true);
       try {
-        const users = await FirebaseChatService.searchUsersByPhone(searchPhone.trim());
+        const users = await FirebaseChatService.searchUsersByEmail(searchEmail.trim());
         if (users.length === 0) {
-          Alert.alert('Not Found', 'No user registered with that phone number.');
+          Alert.alert('Not Found', 'No user registered with that email address.');
           setIsSearching(false);
           return;
         }
@@ -38,7 +38,7 @@ export const OmniChatScreen = ({ currentUserId }: { currentUserId: string }) => 
           users: [target],
         };
         setSelectedChat({ chat, otherUser: target });
-        setSearchPhone('');
+        setSearchEmail('');
         setScreen('room');
       } catch (e: any) {
         Alert.alert('Error', e.message);
@@ -50,14 +50,15 @@ export const OmniChatScreen = ({ currentUserId }: { currentUserId: string }) => 
     return (
       <View style={styles.newChatContainer}>
         <Text style={styles.newChatTitle}>Start New Conversation</Text>
-        <Text style={styles.newChatSubtitle}>Enter the contact's phone number to find them.</Text>
+        <Text style={styles.newChatSubtitle}>Enter the contact's email address to find them.</Text>
         <TextInput
           style={styles.newChatInput}
-          placeholder="+92 300 1234567"
+          placeholder="name@company.com"
           placeholderTextColor={Theme.colors.textMuted}
-          value={searchPhone}
-          onChangeText={setSearchPhone}
-          keyboardType="phone-pad"
+          value={searchEmail}
+          onChangeText={setSearchEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
           autoFocus
         />
         <TouchableOpacity style={styles.newChatBtn} onPress={handleSearch} disabled={isSearching}>

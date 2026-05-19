@@ -6,8 +6,10 @@ and suggest/stage transactional actions that the user confirms in the UI.
 """
 import os
 import json
+import time
+import re
 from typing import List, Dict, Any
-from company_brain.inventory import (
+from company_brain.firestore_inventory import (
     get_products, get_transactions, get_suppliers, get_warehouses,
     record_restock, record_sale, record_adjustment, add_supplier
 )
@@ -233,18 +235,74 @@ def run_chat(messages: List[Dict[str, str]]) -> Dict[str, Any]:
             temperature=0.4,
         )
         
-        # Agentic loop: handle function calls
+        # Agentic loop: handle function calls with model-priority fallback
         max_iterations = 5
         action_card = None
-        
+
+        # Model priority can be configured via GEMINI_MODEL_PRIORITY env var (comma-separated)
+        priority_env = os.environ.get('GEMINI_MODEL_PRIORITY', '')
+        if priority_env:
+            model_list = [m.strip() for m in priority_env.split(',') if m.strip()]
+        else:
+            model_list = [
+                'gemini-2.5-flash-lite',
+                'gemini-2.5-flash',
+                'gemma-4-26b',
+                'gemma-4-31b',
+            ]
+
         for _ in range(max_iterations):
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=contents,
-                config=config,
-            )
-            
-            candidate = response.candidates[0]
+            candidate = None
+            used_model = None
+
+            # Try models in priority order; per-model retry on transient quota errors
+            for model_name in model_list:
+                response = None
+                max_retries = 2
+                for attempt in range(max_retries):
+                    try:
+                        response = client.models.generate_content(
+                            model=model_name,
+                            contents=contents,
+                            config=config,
+                        )
+                        used_model = model_name
+                        break
+                    except Exception as e:
+                        msg = str(e)
+                        # Detect quota exhausted / rate limit
+                        if 'RESOURCE_EXHAUSTED' in msg or 'quota' in msg.lower() or '429' in msg:
+                            # Try to parse a retry delay in seconds from the message
+                            m = re.search(r'retry in\s*([0-9.]+)s', msg)
+                            if not m:
+                                m = re.search(r'retryDelay\W*\'?([0-9.]+)s', msg)
+                            if m:
+                                delay = float(m.group(1))
+                            else:
+                                delay = min(60, (2 ** attempt))
+
+                            print(f"[OpsBot] Model {model_name} quota/rate limit hit, attempt {attempt+1}/{max_retries}, retrying in {delay}s...")
+                            if attempt < max_retries - 1:
+                                time.sleep(delay)
+                                continue
+                            else:
+                                print(f"[OpsBot] Model {model_name} exhausted after {max_retries} attempts: {msg}")
+                                # Try next model in priority list
+                                break
+                        else:
+                            # Non-quota error for this model — skip to next model
+                            print(f"[OpsBot] Model {model_name} error: {e}")
+                            break
+
+                if response is not None:
+                    candidate = response.candidates[0]
+                    print(f"[OpsBot] Using model: {used_model}")
+                    break
+
+            if candidate is None:
+                # No model produced a response — fall back
+                print('[OpsBot] No available model produced a response, using local fallback.')
+                return _fallback_response(messages)
             
             # Check for function calls
             fn_calls = [p for p in candidate.content.parts if p.function_call]

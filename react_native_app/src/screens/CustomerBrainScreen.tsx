@@ -8,6 +8,7 @@ import { Theme } from '../core/theme';
 import { ApiService } from '../services/api';
 import { TraceTerminal } from '../widgets/TraceTerminal';
 import { FirebaseChatService } from '../services/firebaseChatService';
+import { auth } from '../config/firebaseConfig';
 
 interface IncompleteOrder {
   chat_id: string;
@@ -139,31 +140,24 @@ export const CustomerBrainScreen: React.FC = () => {
   const handleScanChats = async () => {
     setIsScanning(true);
     try {
-      // Try fetching real Firebase chats first
-      let chatsPayload: any[] = [];
-      try {
-        await new Promise<void>((resolve) => {
-          const unsub = FirebaseChatService.subscribeToChats('demo-user-id', (fetchedChats) => {
-            chatsPayload = fetchedChats.map((chat) => ({
-              id: chat.id,
-              users: (chat.users || []).map((u: any) => ({ name: u.name })),
-              messages: [{ text: chat.lastMessage || '' }],
-            }));
-            unsub();
-            resolve();
-          });
-        });
-      } catch (_) {
-        // Firebase not configured — use demo payload
+      const currentUser = auth.currentUser;
+      if (!currentUser?.uid) {
+        setIncompleteOrders([]);
+        setStatus('Sign in to scan real chats.');
+        return;
       }
 
-      // Ensure at least demo chats if nothing loaded
-      if (chatsPayload.length === 0) {
-        chatsPayload = [
-          { id: 'chat_alice', users: [{ name: 'Alice (Dairy Supplier)' }], messages: [{ text: 'Hi, did you get the dairy reorder request?' }] },
-          { id: 'chat_bob',   users: [{ name: 'Bob Malone (Hardware Buyer)' }], messages: [{ text: 'Hey, can I buy 50 meters of Copper Wire?' }] },
-        ];
-      }
+      const chatsPayload: any[] = await new Promise((resolve) => {
+        let unsubscribe: () => void = () => {};
+        unsubscribe = FirebaseChatService.subscribeToChats(currentUser.uid, (fetchedChats) => {
+          resolve(fetchedChats.map((chat) => ({
+            id: chat.id,
+            users: (chat.users || []).map((u: any) => ({ name: u.name })),
+            messages: [{ text: chat.lastMessage || '' }],
+          })));
+          unsubscribe();
+        });
+      });
 
       const orders = await ApiService.scanChats(chatsPayload);
       setIncompleteOrders(orders);

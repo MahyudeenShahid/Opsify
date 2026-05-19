@@ -155,7 +155,7 @@ def get_agri_demand_feed(lat: float = 24.8138, lng: float = 67.0366):
 def post_agri_dispatch_shared(payload: dict):
     """
     Triggers shared logistics run, geolocates closest farm matching aggregated crops,
-    and commits transaction records to the SQLite ERP.
+    and commits transaction records to the Firestore ERP.
     """
     lat = payload.get("lat", 24.8138)
     lng = payload.get("lng", 67.0366)
@@ -164,40 +164,25 @@ def post_agri_dispatch_shared(payload: dict):
     aggregation = aggregate_crop_demands(feed)
     analysis = calculate_shared_logistics_route(feed, lat, lng)
     
-    from company_brain.inventory import get_db_connection
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
     dispatch_logs = []
     
     try:
         for crop, total_qty in aggregation.items():
-            cursor.execute("SELECT id, selling_price, cost_price FROM products WHERE name LIKE ?", (f"%{crop.split()[-1]}%",))
-            prod_row = cursor.fetchone()
+            from company_brain.firestore_inventory import search_products_by_name_fragment, record_sale
+            matches = search_products_by_name_fragment(crop.split()[-1])
+            prod_row = matches[0] if matches else None
             if prod_row:
                 prod_id = prod_row["id"]
                 price = prod_row["selling_price"]
                 total_val = total_qty * price
-                
-                cursor.execute("""
-                    INSERT INTO transactions (product_id, warehouse_id, type, reason, quantity, total_value, timestamp)
-                    VALUES (?, 1, 'SALE', 'Agri-Bridge Shared Delivery Dispatch', ?, ?, ?)
-                """, (prod_id, total_qty, total_val, datetime.now().isoformat()))
-                
-                cursor.execute("SELECT stock FROM product_warehouses WHERE product_id = ? AND warehouse_id = 1", (prod_id,))
-                stock_row = cursor.fetchone()
-                if stock_row:
-                    new_stock = max(0.0, stock_row["stock"] - total_qty)
-                    cursor.execute("UPDATE product_warehouses SET stock = ? WHERE product_id = ? AND warehouse_id = 1", (new_stock, prod_id))
-                    
-                dispatch_logs.append(f"Dispatched {total_qty} units of {crop} from Warehouse 1. Value: Rs {total_val}")
-                
-        conn.commit()
+
+                result = record_sale(prod_id, 1, total_qty, total_val)
+                if result.get("status") == "success":
+                    dispatch_logs.append(f"Dispatched {total_qty} units of {crop} from Warehouse 1. Value: Rs {total_val}")
+                else:
+                    dispatch_logs.append(f"Failed dispatch for {crop}: {result.get('message', 'unknown error')}")
     except Exception as e:
-        conn.rollback()
-        print(f"[Agri Dispatch] Database transaction failed: {e}")
-    finally:
-        conn.close()
+        print(f"[Agri Dispatch] Firestore transaction failed: {e}")
         
     return {
         "status": "success",

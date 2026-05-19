@@ -13,6 +13,7 @@ import { AuthScreen } from './src/screens/AuthScreen';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { auth } from './src/config/firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
+import { FirebaseChatService } from './src/services/firebaseChatService';
 
 type Tab = 'customer' | 'inventory' | 'omnichat' | 'logistics' | 'opsbot';
 
@@ -30,17 +31,26 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setLoading(false);
+
+      // Ensure a Firestore user document exists for every authenticated user.
+      if (currentUser && currentUser.email) {
+        (async () => {
+          try {
+            await FirebaseChatService.createUser(
+              currentUser.uid,
+              currentUser.displayName || (currentUser.email ? currentUser.email.split('@')[0] : 'User'),
+              currentUser.email
+            );
+          } catch (err) {
+            // Don't block UI on failure; log for diagnostics.
+            // eslint-disable-next-line no-console
+            console.warn('Failed to ensure user doc on sign-in:', err);
+          }
+        })();
+      }
     });
     return unsubscribe;
   }, []);
-
-  const handleDemoLogin = () => {
-    setUser({
-      uid: 'demo-user-id',
-      email: 'demo@opsify.com',
-      displayName: 'Demo Manager'
-    });
-  };
 
   const switchTab = (tab: Tab) => {
     if (tab === activeTab) return;
@@ -70,7 +80,7 @@ export default function App() {
   }
 
   if (!user) {
-    return <AuthScreen onDemoLogin={handleDemoLogin} />;
+    return <AuthScreen />;
   }
 
   return (
@@ -92,7 +102,7 @@ export default function App() {
           {activeTab === 'logistics' && <LogisticsScreen />}
         </ErrorBoundary>
         <ErrorBoundary fallbackTitle="OpsBot Error">
-          {activeTab === 'opsbot' && <ChatScreen />}
+          {activeTab === 'opsbot' && <ChatScreen currentUserId={user.uid} />}
         </ErrorBoundary>
       </Animated.View>
 
@@ -149,7 +159,7 @@ export default function App() {
       >
         <View style={styles.modalOverlay}>
           <BlurView intensity={90} tint="dark" style={styles.modalContent}>
-            <ChatScreen onClose={() => setIsChatOpen(false)} />
+            <ChatScreen onClose={() => setIsChatOpen(false)} currentUserId={user.uid} />
           </BlurView>
         </View>
       </Modal>

@@ -12,6 +12,13 @@ const firebaseConfig = {
   measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID
 };
 
+const requiredConfigKeys = ['apiKey', 'authDomain', 'projectId', 'storageBucket', 'messagingSenderId', 'appId'] as const;
+export const isFirebaseConfigured = requiredConfigKeys.every((key) => Boolean(firebaseConfig[key]));
+
+if (!isFirebaseConfigured) {
+  console.warn('Firebase environment variables are incomplete. Set the EXPO_PUBLIC_FIREBASE_* values before shipping the app.');
+}
+
 // Initialize Firebase only if it hasn't been initialized already
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 

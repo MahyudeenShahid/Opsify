@@ -37,7 +37,7 @@ Return ONLY a valid JSON object with EXACTLY these keys:
 Return only the JSON object, no explanation."""
 
             response = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-2.5-flash-lite",
                 contents=prompt,
                 config=types.GenerateContentConfig(temperature=0.0),
             )

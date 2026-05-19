@@ -79,8 +79,8 @@ export const InventoryDashboardScreen: React.FC = () => {
     <View style={styles.container}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>Agri-Bridge Portal</Text>
-          <Text style={styles.subtitle}>Hyperlocal Fresh-Produce Logistics Synchronizer</Text>
+          <Text style={styles.title}>Data Ledger</Text>
+          <Text style={styles.subtitle}>Inventory & Analytics Hub</Text>
         </View>
         
         <View style={styles.headerButtons}>

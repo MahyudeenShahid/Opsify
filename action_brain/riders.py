@@ -5,7 +5,7 @@
 
 from typing import List, Dict, Any, Optional
 from action_brain.geo import zone_to_coords, compute_route
-from action_brain.db import sync_rider_pool, get_rider_statuses
+from action_brain.firestore_db import sync_rider_pool, get_rider_statuses
 
 # ---------------------------------------------------------------------------
 # Rider Registry (source of truth for static attributes)

@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from broker.event_broker import broker
-from company_brain.inventory import (
+from company_brain.firestore_inventory import (
     get_suppliers,
     add_supplier,
     add_product,
@@ -74,6 +74,7 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]
+    user_id: Optional[str] = None
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
@@ -273,8 +274,35 @@ def api_procurement_suggest(req: ProcurementSuggestRequest):
 @router.post("/api/chat")
 async def api_chat(req: ChatRequest):
     from agents.chat_agent import run_chat
-    msgs = [{"role": m.role, "content": m.content} for m in req.messages]
+    from company_brain.ops_chat import save_chat_conversation, append_chat_messages
+    # Normalize incoming messages
+    msgs = [{"role": m.role, "content": m.content, "timestamp": None} for m in req.messages]
+
+    # Attempt to capture a user identifier from headers (optional)
+    # If the client provides X-User-Id header, include it in the saved conversation.
+    # Otherwise we'll persist the conversation without a user_id.
+    # Prefer explicit user_id in request payload
+    user_id = req.user_id if getattr(req, 'user_id', None) else None
+
+    # Persist the incoming user messages as a new conversation document
+    chat_doc_id = None
+    try:
+        chat_doc_id = save_chat_conversation(msgs, user_id=user_id, session_id=None)
+    except Exception as e:
+        # Log but continue; chat should still work even if saving fails
+        print(f"[OpsChat] Failed to save incoming conversation: {e}")
+
+    # Run the chat agent
     result = run_chat(msgs)
+
+    # Persist the assistant response to the same conversation doc if available
+    try:
+        assistant_text = result.get("text") if isinstance(result, dict) else None
+        if assistant_text and chat_doc_id:
+            append_chat_messages(chat_doc_id, [{"role": "assistant", "content": assistant_text, "timestamp": None}])
+    except Exception as e:
+        print(f"[OpsChat] Failed to append assistant message: {e}")
+
     return result
 
 

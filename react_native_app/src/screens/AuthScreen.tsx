@@ -14,7 +14,7 @@ import { FirebaseChatService } from '../services/firebaseChatService';
 // Complete Expo-based Auth session redirect listener
 WebBrowser.maybeCompleteAuthSession();
 
-export const AuthScreen = ({ onDemoLogin }: { onDemoLogin: () => void }) => {
+export const AuthScreen = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -201,10 +201,6 @@ export const AuthScreen = ({ onDemoLogin }: { onDemoLogin: () => void }) => {
           <AnimatedButton onPress={handleGoogleAuth} disabled={isLoading} style={styles.googleBtn}>
             <Globe color="#FFF" size={20} style={{ marginRight: 8 }} />
             <Text style={styles.googleBtnText}>Authenticate via Google</Text>
-          </AnimatedButton>
-
-          <AnimatedButton onPress={onDemoLogin} style={styles.demoBtn}>
-            <Text style={styles.demoBtnText}>Launch Developer Bypass (Demo)</Text>
           </AnimatedButton>
         </BlurView>
       </Animated.View>

@@ -145,7 +145,7 @@ async def transcribe_voice(req: VoiceRequest):
         }.get(req.language_hint, "The audio may be in English, Urdu, or Roman Urdu. Transcribe exactly.")
 
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.5-flash-lite",
             contents=[
                 types.Part.from_bytes(data=audio_bytes, mime_type=req.mime_type),
                 f"{lang_prompt} Return only the raw transcription text, no formatting.",

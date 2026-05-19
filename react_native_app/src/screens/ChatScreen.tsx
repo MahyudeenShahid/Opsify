@@ -122,9 +122,10 @@ const ActionCardView: React.FC<{
 
 interface ChatScreenProps {
   onClose?: () => void;
+  currentUserId?: string;
 }
 
-export const ChatScreen: React.FC<ChatScreenProps> = ({ onClose }) => {
+export const ChatScreen: React.FC<ChatScreenProps> = ({ onClose, currentUserId }) => {
 
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -176,7 +177,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onClose }) => {
 
     try {
       const history = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }));
-      const result = await ApiService.sendChatMessage(history);
+      const result = await ApiService.sendChatMessage(history, currentUserId);
 
       const assistantMsg: Message = {
         id: (Date.now() + 1).toString(),

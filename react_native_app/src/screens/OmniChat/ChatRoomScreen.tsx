@@ -50,7 +50,7 @@ export const ChatRoomScreen = ({ chatId, currentUserId, otherUser, onBack }: { c
           </TouchableOpacity>
           <View style={styles.headerInfo}>
             <Text style={styles.headerName}>{otherUser.name}</Text>
-            <Text style={styles.headerPhone}>{otherUser.phoneNumber}</Text>
+            <Text style={styles.headerPhone}>{otherUser.email}</Text>
           </View>
         </BlurView>
       </View>

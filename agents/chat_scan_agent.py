@@ -17,7 +17,7 @@ def scan_chats_for_incomplete_orders(chats_payload: List[Dict[str, Any]]) -> Lis
             
             # Setup the LangChain model
             llm = ChatGoogleGenerativeAI(
-                model="gemini-2.5-flash",
+                model="gemini-2.5-flash-lite",
                 temperature=0.1,
                 google_api_key=api_key
             )
