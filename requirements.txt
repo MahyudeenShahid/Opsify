@@ -8,3 +8,5 @@ firebase-admin
 langchain
 langchain-google-genai
 python-multipart
+python-dotenv
+requests

@@ -5,9 +5,22 @@ service_account.json
 node_modules
 __pycache__
 venv
+.venv
 react_native_app/node_modules
 firebase_config.json
 react_native_app/ios
 react_native_app/android
 react_native_app/ios/Pods
 firebase-adminsdk.json
+# SQLite files
+*.db
+*.db-wal
+*.db-shm
+mock_google_sheet.csv
+# Python cache
+*.pyc
+*.pyo
+.pytest_cache/
+Opsify.db
+opsify_business.db
+*.pyc

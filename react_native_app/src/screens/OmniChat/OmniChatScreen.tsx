@@ -1,43 +1,153 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, Alert } from 'react-native';
-import { auth } from '../../config/firebaseConfig';
+import { View, StyleSheet, Alert, TextInput, TouchableOpacity, Text, ActivityIndicator } from 'react-native';
 import { ChatListScreen } from './ChatListScreen';
 import { ChatRoomScreen } from './ChatRoomScreen';
-import { Chat, User } from '../../services/firebaseChatService';
+import { Chat, User, FirebaseChatService } from '../../services/firebaseChatService';
 import { Theme } from '../../core/theme';
 
-export const OmniChatScreen = ({ currentUserId }: { currentUserId: string }) => {
-  const [selectedChat, setSelectedChat] = useState<{chat: Chat, otherUser: User} | null>(null);
+type Screen = 'list' | 'room' | 'new-chat';
 
-  if (!currentUserId) {
-    return null; // Handled by App.tsx
+export const OmniChatScreen = ({ currentUserId }: { currentUserId: string }) => {
+  const [screen, setScreen] = useState<Screen>('list');
+  const [selectedChat, setSelectedChat] = useState<{ chat: Chat; otherUser: User } | null>(null);
+  const [searchPhone, setSearchPhone] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+
+  if (!currentUserId) return null;
+
+  // ── New Chat: phone number search ─────────────────────────────────────────
+  if (screen === 'new-chat') {
+    const handleSearch = async () => {
+      if (!searchPhone.trim()) return;
+      setIsSearching(true);
+      try {
+        const users = await FirebaseChatService.searchUsersByPhone(searchPhone.trim());
+        if (users.length === 0) {
+          Alert.alert('Not Found', 'No user registered with that phone number.');
+          setIsSearching(false);
+          return;
+        }
+        const target = users[0];
+        const chatId = await FirebaseChatService.createOrGetChat(currentUserId, target.uid);
+        const chat: Chat = {
+          id: chatId,
+          participants: [currentUserId, target.uid],
+          lastMessage: '',
+          lastMessageTimestamp: null,
+          updatedAt: null,
+          users: [target],
+        };
+        setSelectedChat({ chat, otherUser: target });
+        setSearchPhone('');
+        setScreen('room');
+      } catch (e: any) {
+        Alert.alert('Error', e.message);
+      } finally {
+        setIsSearching(false);
+      }
+    };
+
+    return (
+      <View style={styles.newChatContainer}>
+        <Text style={styles.newChatTitle}>Start New Conversation</Text>
+        <Text style={styles.newChatSubtitle}>Enter the contact's phone number to find them.</Text>
+        <TextInput
+          style={styles.newChatInput}
+          placeholder="+92 300 1234567"
+          placeholderTextColor={Theme.colors.textMuted}
+          value={searchPhone}
+          onChangeText={setSearchPhone}
+          keyboardType="phone-pad"
+          autoFocus
+        />
+        <TouchableOpacity style={styles.newChatBtn} onPress={handleSearch} disabled={isSearching}>
+          {isSearching
+            ? <ActivityIndicator color="#000" />
+            : <Text style={styles.newChatBtnText}>Search & Connect</Text>
+          }
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.cancelBtn} onPress={() => setScreen('list')}>
+          <Text style={styles.cancelBtnText}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
+    );
   }
 
-  if (selectedChat) {
+  // ── Chat Room ──────────────────────────────────────────────────────────────
+  if (screen === 'room' && selectedChat) {
     return (
-      <ChatRoomScreen 
+      <ChatRoomScreen
         chatId={selectedChat.chat.id}
         currentUserId={currentUserId}
         otherUser={selectedChat.otherUser}
-        onBack={() => setSelectedChat(null)}
+        onBack={() => { setSelectedChat(null); setScreen('list'); }}
       />
     );
   }
 
+  // ── Chat List ──────────────────────────────────────────────────────────────
   return (
-    <ChatListScreen 
+    <ChatListScreen
       currentUserId={currentUserId}
-      onSelectChat={(chat, otherUser) => setSelectedChat({ chat, otherUser })}
-      onNewChat={() => {
-        Alert.alert("New Chat", "Search for a user by email to start a new chat.");
+      onSelectChat={(chat, otherUser) => {
+        setSelectedChat({ chat, otherUser });
+        setScreen('room');
       }}
+      onNewChat={() => setScreen('new-chat')}
     />
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  newChatContainer: {
     flex: 1,
     backgroundColor: Theme.colors.background,
-  }
+    padding: 32,
+    paddingTop: 80,
+  },
+  newChatTitle: {
+    color: Theme.colors.text,
+    fontSize: 24,
+    fontWeight: '900',
+    marginBottom: 8,
+  },
+  newChatSubtitle: {
+    color: Theme.colors.textMuted,
+    fontSize: 14,
+    marginBottom: 32,
+  },
+  newChatInput: {
+    height: 52,
+    backgroundColor: Theme.colors.surface,
+    borderWidth: 1.5,
+    borderColor: Theme.colors.border,
+    borderRadius: Theme.borderRadius.md,
+    paddingHorizontal: 16,
+    color: Theme.colors.text,
+    fontSize: 16,
+    marginBottom: 16,
+  },
+  newChatBtn: {
+    height: 52,
+    backgroundColor: Theme.colors.primary,
+    borderRadius: Theme.borderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  newChatBtnText: {
+    color: '#000',
+    fontWeight: '900',
+    fontSize: 15,
+  },
+  cancelBtn: {
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelBtnText: {
+    color: Theme.colors.textMuted,
+    fontSize: 14,
+    fontWeight: '600',
+  },
 });

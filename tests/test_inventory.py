@@ -1,81 +1,78 @@
 # File: tests/test_inventory.py
 #
 # ## Purpose
-# Validate the SQLite inventory operations, predictive algorithms, and stock deduction logic of System 2.
+# Validate the SQLite inventory operations, predictive algorithms, and stock logic of System 2.
+# Uses an ISOLATED test database — NEVER touches opsify_business.db.
 
 import sys
 import os
+import tempfile
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+# ── Redirect DB path BEFORE importing inventory ──────────────────────────────
+_TEST_DB = tempfile.NamedTemporaryFile(suffix=".db", delete=False).name
+import company_brain.inventory as _inv
+_inv.DB_PATH = _TEST_DB
+
 from company_brain.inventory import (
-    init_db,
-    get_suppliers,
-    get_products,
-    add_supplier,
-    add_product,
-    record_sale,
-    record_restock,
-    record_adjustment,
-    get_transactions,
-    get_demand_predictions,
-    get_reorder_suggestions
+    init_db, get_suppliers, get_products, add_supplier, add_product,
+    record_sale, record_restock, record_adjustment,
+    get_transactions, get_demand_predictions, get_reorder_suggestions
 )
 
 def run_tests():
     print("=" * 60)
-    print("STARTING SYSTEM 2: ADVANCED INVENTORY VALIDATION")
+    print("STARTING SYSTEM 2: INVENTORY VALIDATION")
+    print(f"Test DB: {_TEST_DB}")
     print("=" * 60)
 
-    # 1. Clean previous runs
-    db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'opsify_business.db'))
-    if os.path.exists(db_path):
-        os.remove(db_path)
-        print("Removed old test database.")
-
-    # 2. Init and Seed DB
     init_db()
-    print("Database initialized and seeded.")
+    print("Test database initialized and seeded.\n")
 
-    # 3. View Suppliers
-    print("\nSuppliers:")
+    print("Suppliers:")
     for sup in get_suppliers():
-        print(f"  [{sup['id']}] {sup['name']} (Rating: {sup['rating']}, Reliability: {sup['reliability_score']})")
+        print(f"  [{sup['id']}] {sup['name']} (Rating: {sup['rating']})")
 
-    # 4. View Products
     print("\nInitial Products:")
     for prod in get_products():
         print(f"  [{prod['id']}] {prod['name']} ({prod['variant']}) - Stock: {prod['stock']} {prod['unit']}")
 
-    # 5. Record a Sale
-    print("\nExecuting Sale: Selling 10 units of Product ID 1...")
-    res = record_sale(1, 10.0, 1500.0) # Selling 10 Milk
-    print(f"  Result: {res['status']}, Remaining: {res.get('remaining_stock')}, Warning: {res.get('reorder_warning')}")
+    print("\nSale: Selling 10 units of Product 1 from Warehouse 1...")
+    res = record_sale(1, 1, 10.0, 1500.0)
+    print(f"  {res['status']} | Remaining: {res.get('remaining_stock')} | Reorder warning: {res.get('reorder_warning')}")
+    assert res["status"] == "success", f"Sale failed: {res}"
 
-    # 6. Record a Restock
-    print("\nExecuting Restock: Adding 50 units of Product ID 1...")
-    res = record_restock(1, 50.0, 4500.0)
-    print(f"  Result: {res['status']}, Remaining: {res.get('remaining_stock')}")
+    print("\nRestock: Adding 50 units to Product 1, Warehouse 1...")
+    res = record_restock(1, 1, 50.0, 4500.0)
+    print(f"  {res['status']} | Remaining: {res.get('remaining_stock')}")
+    assert res["status"] == "success", f"Restock failed: {res}"
 
-    # 7. Record an Adjustment (Damage)
-    print("\nExecuting Adjustment: Lost 2 units of Product ID 1...")
-    res = record_adjustment(1, -2.0, "Damaged in transit")
-    print(f"  Result: {res['status']}, Remaining: {res.get('remaining_stock')}")
+    print("\nAdjustment: -2 units (damage)...")
+    res = record_adjustment(1, 1, -2.0, "Damaged in transit")
+    print(f"  {res['status']} | Remaining: {res.get('remaining_stock')}")
+    assert res["status"] == "success", f"Adjustment failed: {res}"
 
-    # 8. View Transactions
     print("\nTransactions Ledger:")
-    for tx in get_transactions():
-        reason = f" (Reason: {tx['reason']})" if tx['reason'] else ""
-        print(f"  [{tx['timestamp']}] {tx['type']}{reason} - {tx['product_name']} | Qty: {tx['quantity']} | Value: {tx['total_value']}")
+    for tx in get_transactions()[:5]:
+        reason = f" ({tx['reason']})" if tx.get('reason') else ""
+        print(f"  [{tx['timestamp']}] {tx['type']}{reason} | {tx['product_name']} | Qty: {tx['quantity']}")
 
-    # 9. Predictive Engine
-    print("\nDemand Predictions (30-day velocity):")
+    print("\nDemand Predictions:")
     for pred in get_demand_predictions():
-        print(f"  [{pred['product_id']}] {pred['name']}: {pred['daily_velocity']} {pred['unit']}/day -> Stock-out: {pred['estimated_stockout_date']}")
+        print(f"  {pred['name']}: {pred['daily_velocity']} {pred['unit']}/day → stockout: {pred['estimated_stockout_date']}")
 
-    # 10. Reorder Suggestions
-    print("\nAI Reorder Suggestions:")
+    print("\nReorder Suggestions:")
     for sug in get_reorder_suggestions():
-        print(f"  [ALERT] [{sug['urgency']}] {sug['message']}")
+        print(f"  [{sug['urgency']}] {sug['message']}")
+
+    print("\n" + "=" * 60)
+    print("ALL INVENTORY TESTS PASSED ✅")
+
+    try:
+        os.unlink(_TEST_DB)
+    except Exception:
+        pass
 
 if __name__ == "__main__":
     run_tests()

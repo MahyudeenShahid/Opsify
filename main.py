@@ -1,8 +1,15 @@
 import asyncio
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+import os
+import random
+from dotenv import load_dotenv
+load_dotenv()  # Load .env file FIRST before any os.environ.get() calls
+
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request, Depends
+from fastapi.responses import JSONResponse
+from fastapi.security.api_key import APIKeyHeader
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Optional
+from typing import Optional, List, Any
 
 from orchestrator.graph import AntigravityGraph
 from company_brain.graph import CompanyBrainGraph
@@ -24,7 +31,7 @@ from company_brain.inventory import (
 )
 from company_brain.sheets_sync import sync_inventory_to_sheets
 
-app = FastAPI(title="Opsify AI Orchestrator API")
+app = FastAPI(title="Opsify AI Orchestrator API", version="2.0.0")
 
 init_db()
 
@@ -33,11 +40,27 @@ app.add_middleware(
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*", "X-API-Key"],
 )
 
 customer_graph = AntigravityGraph()
 company_graph = CompanyBrainGraph()
+
+# ── API Key Authentication ────────────────────────────────────────────────────
+_OPSIFY_API_KEY = os.environ.get("OPSIFY_API_KEY", "")
+_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+UNPROTECTED_PATHS = {"/", "/docs", "/redoc", "/openapi.json", "/ws/events"}
+
+@app.middleware("http")
+async def api_key_middleware(request: Request, call_next):
+    """Require X-API-Key header on all non-public endpoints when OPSIFY_API_KEY is configured."""
+    if not _OPSIFY_API_KEY or request.url.path in UNPROTECTED_PATHS or request.url.path.startswith("/docs"):
+        return await call_next(request)
+    key = request.headers.get("X-API-Key", "")
+    if key != _OPSIFY_API_KEY:
+        return JSONResponse(status_code=403, content={"detail": "Invalid or missing X-API-Key header."})
+    return await call_next(request)
 
 class OrderRequest(BaseModel):
     message: str
@@ -104,7 +127,12 @@ async def publish_event(req: EventPayload):
     
     # Autonomous Listener: If a customer order is booked, the Company Brain takes over.
     if req.event_type == "CUSTOMER_ORDER_BOOKED":
-        asyncio.create_task(company_graph.run(req.json()))
+        # Use model_dump_json() for Pydantic v2 compatibility (fallback to json() for v1)
+        try:
+            payload_str = req.model_dump_json()
+        except AttributeError:
+            payload_str = req.json()
+        asyncio.create_task(company_graph.run(payload_str))
         
     return {"status": "published"}
 
@@ -166,7 +194,7 @@ def api_add_supplier(req: SupplierRequest):
         raise HTTPException(status_code=400, detail=res["message"])
     return res
 
-import random
+# (random already imported at top)
 
 @app.get("/api/vendors/search")
 def api_search_vendors(query: str, location: str = "Karachi"):
@@ -306,10 +334,24 @@ def api_sync_sheets():
 # --- SYSTEM 1 AGENTIC KIT ---
 from agents.chat_scan_agent import scan_chats_for_incomplete_orders
 
+class ChatMessage(BaseModel):
+    text: str
+
+class ChatUser(BaseModel):
+    name: str
+
+class ChatPayloadItem(BaseModel):
+    id: str
+    users: List[ChatUser] = []
+    messages: List[ChatMessage] = []
+
 @app.post("/api/agents/scan-chats")
-def api_scan_chats(req: list):
+def api_scan_chats(req: List[ChatPayloadItem]):
     try:
-        return scan_chats_for_incomplete_orders(req)
+        # Convert Pydantic models to plain dicts for the agent
+        raw = [item.model_dump() if hasattr(item, 'model_dump') else item.dict() for item in req]
+        return scan_chats_for_incomplete_orders(raw)
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -7,13 +7,16 @@ import os
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 
-DB_PATH = "opsify_business.db"
+# DB_PATH can be overridden by tests (set module attribute before importing functions)
+DB_PATH = os.environ.get("OPSIFY_DB_PATH", "opsify_business.db")
 
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA foreign_keys = 1")
+    conn.execute("PRAGMA journal_mode=WAL")   # Better concurrent write safety
     conn.row_factory = sqlite3.Row
     return conn
+
 
 def init_db():
     conn = get_db_connection()

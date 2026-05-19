@@ -9,6 +9,7 @@ import { InventoryDashboardScreen } from './src/screens/InventoryDashboardScreen
 import { OmniChatScreen } from './src/screens/OmniChat/OmniChatScreen';
 import { LogisticsScreen } from './src/screens/LogisticsScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { auth } from './src/config/firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
 
@@ -76,10 +77,18 @@ export default function App() {
       
       {/* Main Screen Content with Transitions */}
       <Animated.View style={[styles.container, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
-        {activeTab === 'customer' && <CustomerBrainScreen />}
-        {activeTab === 'inventory' && <InventoryDashboardScreen />}
-        {activeTab === 'omnichat' && <OmniChatScreen currentUserId={user.uid} />}
-        {activeTab === 'logistics' && <LogisticsScreen />}
+        <ErrorBoundary fallbackTitle="Customer Brain Error">
+          {activeTab === 'customer' && <CustomerBrainScreen />}
+        </ErrorBoundary>
+        <ErrorBoundary fallbackTitle="Ledger Error">
+          {activeTab === 'inventory' && <InventoryDashboardScreen />}
+        </ErrorBoundary>
+        <ErrorBoundary fallbackTitle="OmniChat Error">
+          {activeTab === 'omnichat' && <OmniChatScreen currentUserId={user.uid} />}
+        </ErrorBoundary>
+        <ErrorBoundary fallbackTitle="Dispatch Error">
+          {activeTab === 'logistics' && <LogisticsScreen />}
+        </ErrorBoundary>
       </Animated.View>
 
       {/* Floating Glassmorphic Tab Navigation Bar */}
