@@ -12,6 +12,43 @@ import {
 } from 'lucide-react-native';
 import { Theme } from '../core/theme';
 import { ApiService } from '../services/api';
+import { getFirestore, collection, addDoc, getDocs, query, orderBy, limit, serverTimestamp } from 'firebase/firestore';
+import { auth } from '../config/firebaseConfig';
+
+// ── Firestore chat persistence ────────────────────────────────────────────────
+const db = getFirestore();
+
+async function loadChatHistory(userId: string): Promise<Message[]> {
+  try {
+    const ref = collection(db, 'users', userId, 'opsbot_messages');
+    const q = query(ref, orderBy('timestamp', 'asc'), limit(50));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => {
+      const data = d.data();
+      return {
+        id: d.id,
+        role: data.role,
+        content: data.content,
+        timestamp: data.timestamp?.toDate() || new Date(),
+        actionCard: data.actionCard,
+      } as Message;
+    });
+  } catch { return []; }
+}
+
+async function saveChatMessage(userId: string, msg: Message) {
+  try {
+    const ref = collection(db, 'users', userId, 'opsbot_messages');
+    await addDoc(ref, {
+      role: msg.role,
+      content: msg.content,
+      timestamp: serverTimestamp(),
+      actionCard: msg.actionCard || null,
+    });
+  } catch (e) {
+    console.warn('[OpsBot] Failed to save message:', e);
+  }
+}
 
 interface Message {
   id: string;
@@ -126,21 +163,32 @@ interface ChatScreenProps {
 }
 
 export const ChatScreen: React.FC<ChatScreenProps> = ({ onClose, currentUserId }) => {
+  const uid = currentUserId || auth.currentUser?.uid || '';
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '0',
-      role: 'assistant',
-      content: "👋 I'm **OpsBot**, your Opsify ERP assistant.\n\nI can answer questions about your stock, orders, and suppliers — and I can stage actions like restocking or recording sales, which you confirm before anything changes.\n\nHow can I help you today?",
-      timestamp: new Date(),
-    },
-  ]);
+  const WELCOME: Message = {
+    id: '0',
+    role: 'assistant',
+    content: "👋 I'm **OpsBot**, your Opsify ERP assistant.\n\nI can answer questions about your stock, orders, and suppliers — and I can stage actions like restocking or recording sales, which you confirm before anything changes.\n\nHow can I help you today?",
+    timestamp: new Date(),
+  };
+
+  const [messages, setMessages] = useState<Message[]>([WELCOME]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isExecutingAction, setIsExecutingAction] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
   const typingDot = useRef(new Animated.Value(0)).current;
+
+  // Load persisted history on mount
+  useEffect(() => {
+    if (!uid) return;
+    loadChatHistory(uid).then(history => {
+      if (history.length > 0) setMessages(history);
+      setHistoryLoaded(true);
+    });
+  }, [uid]);
 
   useEffect(() => {
     if (isLoading) {
@@ -172,6 +220,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onClose, currentUserId }
     };
 
     setMessages(prev => [...prev, userMsg]);
+    if (uid) saveChatMessage(uid, userMsg);
     setIsLoading(true);
     scrollToBottom();
 
@@ -188,6 +237,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onClose, currentUserId }
       };
 
       setMessages(prev => [...prev, assistantMsg]);
+      if (uid) saveChatMessage(uid, assistantMsg);
     } catch (e: any) {
       const errMsg: Message = {
         id: (Date.now() + 1).toString(),

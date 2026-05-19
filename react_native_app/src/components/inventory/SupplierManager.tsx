@@ -30,14 +30,15 @@ export const SupplierManager: React.FC = () => {
 
   const handleNearMePress = () => {
     setIsFetchingLocation(true);
-    if (!navigator.geolocation) {
+    const geo = (navigator as any).geolocation;
+    if (!geo) {
       Alert.alert('Not Supported', 'Geolocation is not supported by your browser/device.');
       setIsFetchingLocation(false);
       return;
     }
     
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
+    geo.getCurrentPosition(
+      async (position: any) => {
         const { latitude, longitude } = position.coords;
         setUserLocation({ lat: latitude, lng: longitude });
         setScoutLocation('Locating...');
@@ -57,7 +58,7 @@ export const SupplierManager: React.FC = () => {
           setIsFetchingLocation(false);
         }
       },
-      (error) => {
+      (error: any) => {
         setIsFetchingLocation(false);
         Alert.alert('Location Error', 'Unable to fetch your GPS coordinates. Using Clifton as fallback.');
         setScoutLocation('Clifton');

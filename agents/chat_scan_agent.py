@@ -25,9 +25,95 @@ def _firestore_db():
 
 SCAN_STATE_COLLECTION = "scan_state"
 SCAN_SESSIONS_COLLECTION = "scan_sessions"
+PENDING_ORDERS_COLLECTION = "pending_scan_orders"
 
 
-def load_scan_cursors() -> Dict[str, Any]:
+def _order_fingerprint_str(order: Dict[str, Any]) -> str:
+    """Stable fingerprint for an order (also used as Firestore doc ID)."""
+    import hashlib
+    raw = f"{order.get('chat_id')}|{order.get('type')}|{order.get('item')}|{order.get('quantity')}"
+    return hashlib.md5(raw.encode()).hexdigest()[:16]
+
+
+def save_pending_orders(user_id: str, orders: List[Dict[str, Any]]) -> None:
+    """
+    Persist detected orders to Firestore so they survive between app sessions.
+    Each order is stored with status='PENDING' and a fingerprint doc ID.
+    Already-rejected orders are skipped (they're in load_rejected_orders()).
+    """
+    db = _firestore_db()
+    if not db or not orders:
+        return
+    try:
+        rejected = load_rejected_orders(user_id)
+        batch = db.batch()
+        now_iso = datetime.now(timezone.utc).isoformat()
+        for order in orders:
+            fp = _order_fingerprint_str(order)
+            if fp in rejected:
+                continue
+            ref = db.collection("users").document(user_id).collection(PENDING_ORDERS_COLLECTION).document(fp)
+            batch.set(ref, {
+                **order,
+                "fingerprint": fp,
+                "status": "PENDING",
+                "detected_at": now_iso,
+            }, merge=True)
+        batch.commit()
+    except Exception as e:
+        print(f"[PendingOrders] save error: {e}")
+
+
+def load_pending_orders(user_id: str) -> List[Dict[str, Any]]:
+    """
+    Fetch all pending (un-actioned) detected orders from Firestore.
+    Returns them sorted by detection time, newest first.
+    """
+    db = _firestore_db()
+    if not db:
+        return []
+    try:
+        docs = (
+            db.collection("users").document(user_id).collection(PENDING_ORDERS_COLLECTION)
+            .where("status", "==", "PENDING")
+            .stream()
+        )
+        orders = [{**doc.to_dict(), "fingerprint": doc.id} for doc in docs]
+        orders.sort(key=lambda o: o.get("detected_at", ""), reverse=True)
+        return orders
+    except Exception as e:
+        print(f"[PendingOrders] load error: {e}")
+        return []
+
+
+def delete_pending_order(user_id: str, fingerprint: str) -> None:
+    """Remove a single pending order by fingerprint (after approve or reject)."""
+    db = _firestore_db()
+    if not db:
+        return
+    try:
+        db.collection("users").document(user_id).collection(PENDING_ORDERS_COLLECTION).document(fingerprint).delete()
+    except Exception as e:
+        print(f"[PendingOrders] delete error: {e}")
+
+
+def clear_all_pending_orders(user_id: str) -> None:
+    """Wipe all pending orders (e.g. on a fresh full scan)."""
+    db = _firestore_db()
+    if not db:
+        return
+    try:
+        docs = db.collection("users").document(user_id).collection(PENDING_ORDERS_COLLECTION).stream()
+        batch = db.batch()
+        for doc in docs:
+            batch.delete(doc.reference)
+        batch.commit()
+    except Exception as e:
+        print(f"[PendingOrders] clear error: {e}")
+
+
+
+def load_scan_cursors(user_id: str) -> Dict[str, Any]:
     """
     Load the last scanned cursor per chat_id from Firestore.
     Returns: { chat_id: {last_scanned_message_id, last_scanned_at_iso} }
@@ -36,14 +122,14 @@ def load_scan_cursors() -> Dict[str, Any]:
     if not db:
         return {}
     try:
-        docs = db.collection(SCAN_STATE_COLLECTION).stream()
-        return {doc.id: doc.to_dict() for doc in docs}
+        docs = db.collection("users").document(user_id).collection(SCAN_STATE_COLLECTION).stream()
+        return {doc.id: doc.to_dict() for doc in docs if doc.id != "__rejected__"}
     except Exception as e:
         print(f"[ScanState] load error: {e}")
         return {}
 
 
-def save_scan_cursors(cursor_updates: Dict[str, Any]) -> None:
+def save_scan_cursors(user_id: str, cursor_updates: Dict[str, Any]) -> None:
     """
     Persist updated cursors back to Firestore.
     cursor_updates: { chat_id: {last_scanned_message_id, last_scanned_at_iso, messages_scanned} }
@@ -54,32 +140,59 @@ def save_scan_cursors(cursor_updates: Dict[str, Any]) -> None:
     try:
         batch = db.batch()
         for chat_id, data in cursor_updates.items():
-            ref = db.collection(SCAN_STATE_COLLECTION).document(chat_id)
+            ref = db.collection("users").document(user_id).collection(SCAN_STATE_COLLECTION).document(chat_id)
             batch.set(ref, data, merge=True)
         batch.commit()
     except Exception as e:
         print(f"[ScanState] save error: {e}")
 
 
-def save_scan_session(session: Dict[str, Any]) -> None:
+def delete_scan_cursor(user_id: str, chat_id: str) -> None:
+    """Delete a scan cursor for a specific chat ID, allowing it to be scanned from scratch."""
+    db = _firestore_db()
+    if not db:
+        return
+    try:
+        db.collection("users").document(user_id).collection(SCAN_STATE_COLLECTION).document(chat_id).delete()
+    except Exception as e:
+        print(f"[ScanState] delete cursor error: {e}")
+
+
+def clear_all_scan_cursors(user_id: str) -> None:
+    """Reset all cursors so the system rescans everything next time."""
+    db = _firestore_db()
+    if not db:
+        return
+    try:
+        docs = db.collection("users").document(user_id).collection(SCAN_STATE_COLLECTION).stream()
+        batch = db.batch()
+        for doc in docs:
+            if doc.id != "__rejected__":
+                batch.delete(doc.reference)
+        batch.commit()
+    except Exception as e:
+        print(f"[ScanState] clear cursors error: {e}")
+
+
+def save_scan_session(user_id: str, session: Dict[str, Any]) -> None:
     """Append a new scan session record to Firestore."""
     db = _firestore_db()
     if not db:
         return
     try:
-        db.collection(SCAN_SESSIONS_COLLECTION).add(session)
+        db.collection("users").document(user_id).collection(SCAN_SESSIONS_COLLECTION).add(session)
     except Exception as e:
         print(f"[ScanSession] save error: {e}")
 
 
-def load_scan_sessions(limit: int = 10) -> List[Dict[str, Any]]:
+def load_scan_sessions(user_id: str, limit: int = 10) -> List[Dict[str, Any]]:
     """Load recent scan session history."""
     db = _firestore_db()
     if not db:
         return []
     try:
         docs = (
-            db.collection(SCAN_SESSIONS_COLLECTION)
+            db.collection("users").document(user_id).collection(SCAN_SESSIONS_COLLECTION)
             .order_by("scanned_at", direction="DESCENDING")
             .limit(limit)
             .stream()
@@ -90,13 +203,39 @@ def load_scan_sessions(limit: int = 10) -> List[Dict[str, Any]]:
         return []
 
 
-def load_rejected_orders() -> set:
+def delete_scan_session(user_id: str, session_id: str) -> None:
+    """Delete a specific scan session record."""
+    db = _firestore_db()
+    if not db:
+        return
+    try:
+        db.collection("users").document(user_id).collection(SCAN_SESSIONS_COLLECTION).document(session_id).delete()
+    except Exception as e:
+        print(f"[ScanSession] delete error: {e}")
+
+
+def clear_all_scan_sessions(user_id: str) -> None:
+    """Delete all scan session history records."""
+    db = _firestore_db()
+    if not db:
+        return
+    try:
+        docs = db.collection("users").document(user_id).collection(SCAN_SESSIONS_COLLECTION).stream()
+        batch = db.batch()
+        for doc in docs:
+            batch.delete(doc.reference)
+        batch.commit()
+    except Exception as e:
+        print(f"[ScanSession] clear error: {e}")
+
+
+def load_rejected_orders(user_id: str) -> set:
     """Load set of rejected order fingerprints from Firestore."""
     db = _firestore_db()
     if not db:
         return set()
     try:
-        doc = db.collection(SCAN_STATE_COLLECTION).document("__rejected__").get()
+        doc = db.collection("users").document(user_id).collection(SCAN_STATE_COLLECTION).document("__rejected__").get()
         if doc.exists:
             return set(doc.to_dict().get("fingerprints", []))
         return set()
@@ -104,13 +243,13 @@ def load_rejected_orders() -> set:
         return set()
 
 
-def save_rejected_order(fingerprint: str) -> None:
+def save_rejected_order(user_id: str, fingerprint: str) -> None:
     """Mark an order fingerprint as rejected so it won't resurface."""
     db = _firestore_db()
     if not db:
         return
     try:
-        ref = db.collection(SCAN_STATE_COLLECTION).document("__rejected__")
+        ref = db.collection("users").document(user_id).collection(SCAN_STATE_COLLECTION).document("__rejected__")
         doc = ref.get()
         existing = []
         if doc.exists:
@@ -130,6 +269,7 @@ def _order_fingerprint(order: Dict[str, Any]) -> str:
 # ─── Core deep-scan logic ─────────────────────────────────────────────────────
 
 def deep_scan_chats(
+    user_id: str,
     chats_with_messages: List[Dict[str, Any]],
     scan_cursors: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
@@ -138,6 +278,7 @@ def deep_scan_chats(
     Uses Gemini AI if available, falls back to heuristics.
 
     Input:
+      user_id: authenticated user ID
       chats_with_messages: [
         {
           id: str,
@@ -162,9 +303,9 @@ def deep_scan_chats(
       }
     """
     if scan_cursors is None:
-        scan_cursors = load_scan_cursors()
+        scan_cursors = load_scan_cursors(user_id)
 
-    rejected = load_rejected_orders()
+    rejected = load_rejected_orders(user_id)
     api_key = os.environ.get("GEMINI_API_KEY")
 
     total_new_messages = 0

@@ -15,10 +15,23 @@ from agents.chat_scan_agent import (
     save_scan_cursors,
     save_scan_session,
     save_rejected_order,
+    save_pending_orders,
+    load_pending_orders,
+    delete_pending_order,
+    delete_scan_session,
+    clear_all_scan_sessions,
+    delete_scan_cursor,
+    clear_all_scan_cursors,
 )
 
 router = APIRouter()
 customer_graph = AntigravityGraph()
+
+DEFAULT_USER_ID = "shared_ledger"
+
+def _uid(x_user_id: Optional[str]) -> str:
+    """Return the caller's user_id, falling back to default shared_ledger."""
+    return x_user_id.strip() if x_user_id and x_user_id.strip() else DEFAULT_USER_ID
 
 # ── Location → Warehouse routing map ────────────────────────────────────────
 _LOCATION_WAREHOUSE: dict = {
@@ -217,27 +230,28 @@ def api_scan_chats(req: List[ChatPayloadItem]):
 
 
 @router.post("/api/agents/deep-scan")
-def api_deep_scan_chats(req: List[DeepScanChatItem]):
+def api_deep_scan_chats(req: List[DeepScanChatItem], x_user_id: Optional[str] = Header(None)):
     """
     System 1 deep scan: reads ALL messages per chat (since last cursor).
     Persists scan state to Firestore so next run only processes new messages.
     """
     import datetime
     try:
+        user_id = _uid(x_user_id)
         raw_chats = []
         for chat in req:
             d = chat.model_dump() if hasattr(chat, 'model_dump') else chat.dict()
             raw_chats.append(d)
 
         # Load existing cursors from Firestore
-        cursors = load_scan_cursors()
+        cursors = load_scan_cursors(user_id)
 
         # Run deep scan
-        result = deep_scan_chats(raw_chats, scan_cursors=cursors)
+        result = deep_scan_chats(user_id, raw_chats, scan_cursors=cursors)
 
         # Persist updated cursors
         if result["cursor_updates"]:
-            save_scan_cursors(result["cursor_updates"])
+            save_scan_cursors(user_id, result["cursor_updates"])
 
         # Save scan session record
         metadata = result["scan_metadata"]
@@ -249,7 +263,11 @@ def api_deep_scan_chats(req: List[DeepScanChatItem]):
             "orders_detected": len(result["detected_orders"]),
             "per_chat": metadata["per_chat"],
         }
-        save_scan_session(session)
+        save_scan_session(user_id, session)
+
+        # Persist detected orders so user can approve/reject between sessions
+        if result["detected_orders"]:
+            save_pending_orders(user_id, result["detected_orders"])
 
         return {
             "status": "ok",
@@ -260,23 +278,90 @@ def api_deep_scan_chats(req: List[DeepScanChatItem]):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/api/agents/pending-orders")
+def api_get_pending_orders(x_user_id: Optional[str] = Header(None)):
+    """Return all detected orders that haven't been approved or rejected yet."""
+    try:
+        user_id = _uid(x_user_id)
+        return {"pending_orders": load_pending_orders(user_id)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/api/agents/pending-orders/{fingerprint}")
+def api_delete_pending_order_endpoint(fingerprint: str, x_user_id: Optional[str] = Header(None)):
+    """Remove a pending order after it's been actioned (approved or rejected)."""
+    try:
+        user_id = _uid(x_user_id)
+        delete_pending_order(user_id, fingerprint)
+        return {"status": "ok", "deleted": fingerprint}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/api/agents/scan-state")
-def api_get_scan_state():
+def api_get_scan_state(x_user_id: Optional[str] = Header(None)):
     """Return all scan cursors + recent scan sessions."""
     try:
-        cursors = load_scan_cursors()
-        sessions = load_scan_sessions(limit=15)
+        user_id = _uid(x_user_id)
+        cursors = load_scan_cursors(user_id)
+        sessions = load_scan_sessions(user_id, limit=15)
         return {"cursors": cursors, "sessions": sessions}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/api/agents/reject-order")
-def api_reject_order(req: RejectOrderRequest):
+def api_reject_order(req: RejectOrderRequest, x_user_id: Optional[str] = Header(None)):
     """Mark a detected order as rejected so it won't resurface in future scans."""
     try:
+        user_id = _uid(x_user_id)
         fingerprint = f"{req.chat_id}|{req.type}|{req.item}|{req.quantity}"
-        save_rejected_order(fingerprint)
+        save_rejected_order(user_id, fingerprint)
         return {"status": "ok", "fingerprint": fingerprint}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/api/agents/scan-sessions/{session_id}")
+def api_delete_scan_session(session_id: str, x_user_id: Optional[str] = Header(None)):
+    """Delete a specific scan session from history."""
+    try:
+        user_id = _uid(x_user_id)
+        delete_scan_session(user_id, session_id)
+        return {"status": "ok"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/api/agents/scan-sessions")
+def api_clear_all_scan_sessions(x_user_id: Optional[str] = Header(None)):
+    """Wipe all scan session history."""
+    try:
+        user_id = _uid(x_user_id)
+        clear_all_scan_sessions(user_id)
+        return {"status": "ok"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/api/agents/scan-cursors/{chat_id}")
+def api_delete_scan_cursor(chat_id: str, x_user_id: Optional[str] = Header(None)):
+    """Reset the scan cursor for a specific chat."""
+    try:
+        user_id = _uid(x_user_id)
+        delete_scan_cursor(user_id, chat_id)
+        return {"status": "ok"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/api/agents/scan-cursors")
+def api_clear_all_scan_cursors(x_user_id: Optional[str] = Header(None)):
+    """Reset all scan cursors (forcing a full scan next time)."""
+    try:
+        user_id = _uid(x_user_id)
+        clear_all_scan_cursors(user_id)
+        return {"status": "ok"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

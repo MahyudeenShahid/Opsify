@@ -1,3 +1,11 @@
+"""
+Firestore Inventory — Per-User Data Store
+All data lives under: users/{user_id}/{collection}/{doc}
+
+Collections per user:
+  warehouses, suppliers, products, product_warehouses,
+  transactions, orders, activity_log, opsbot_messages
+"""
 from __future__ import annotations
 
 from collections import defaultdict
@@ -8,24 +16,33 @@ from firebase_admin import firestore
 
 from firebase_store import get_firestore_client, utc_now
 
+# ── Default/fallback user for backward compat ──────────────────────────────────
+DEFAULT_USER_ID = "__shared__"
 
-WAREHOUSES_COLLECTION = "warehouses"
-SUPPLIERS_COLLECTION = "suppliers"
-PRODUCTS_COLLECTION = "products"
-PRODUCT_WAREHOUSES_COLLECTION = "product_warehouses"
-TRANSACTIONS_COLLECTION = "transactions"
+# Collection names (relative to users/{uid}/)
+COL_WAREHOUSES      = "warehouses"
+COL_SUPPLIERS       = "suppliers"
+COL_PRODUCTS        = "products"
+COL_STOCK           = "product_warehouses"
+COL_TRANSACTIONS    = "transactions"
+COL_ORDERS          = "orders"
+COL_ACTIVITY_LOG    = "activity_log"
 
+
+# ── Core helpers ──────────────────────────────────────────────────────────────
 
 def _client():
     return get_firestore_client()
 
 
-def _collection(name: str):
-    return _client().collection(name)
+def _user_ref(user_id: str):
+    """Reference to the user document (parent of all subcollections)."""
+    return _client().collection("users").document(user_id)
 
 
-def _first_doc(name: str):
-    return next(_collection(name).limit(1).stream(), None)
+def _col(user_id: str, collection: str):
+    """Shorthand for users/{uid}/{collection}."""
+    return _user_ref(user_id).collection(collection)
 
 
 def _numeric_doc_id(doc_id: Any) -> int:
@@ -35,8 +52,8 @@ def _numeric_doc_id(doc_id: Any) -> int:
         return 0
 
 
-def _next_numeric_id(collection_name: str) -> int:
-    docs = list(_collection(collection_name).stream())
+def _next_numeric_id(user_id: str, collection: str) -> int:
+    docs = list(_col(user_id, collection).stream())
     if not docs:
         return 1
     return max(_numeric_doc_id(doc.id) for doc in docs) + 1
@@ -47,7 +64,7 @@ def _timestamp_value(value: Any):
         return value
     if isinstance(value, str):
         try:
-            return datetime.fromisoformat(value)
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
         except Exception:
             return utc_now()
     return utc_now()
@@ -60,523 +77,628 @@ def _doc_data(doc_snap) -> Dict[str, Any]:
     return data
 
 
-def init_db():
-    if _first_doc(WAREHOUSES_COLLECTION) is not None:
-        return
+def log_activity(user_id: str, action: str, entity: str, details: Dict[str, Any]):
+    """Append an activity log entry for auditing."""
+    try:
+        _col(user_id, COL_ACTIVITY_LOG).add({
+            "action":    action,     # ADD | EDIT | DELETE | SALE | RESTOCK | ADJUSTMENT | ORDER
+            "entity":    entity,     # product | supplier | warehouse | order | transaction
+            "details":   details,
+            "timestamp": utc_now().isoformat(),
+        })
+    except Exception as e:
+        print(f"[ActivityLog] {e}")
 
+
+# ── Init / Onboarding ─────────────────────────────────────────────────────────
+
+def init_db():
+    """Legacy no-op — actual seeding is done per-user via seed_user_data()."""
+    pass
+
+
+def user_is_onboarded(user_id: str) -> bool:
+    snap = _user_ref(user_id).get()
+    if not snap.exists:
+        return False
+    return snap.to_dict().get("onboarded", False)
+
+
+def mark_user_onboarded(user_id: str):
+    _user_ref(user_id).set({"onboarded": True}, merge=True)
+
+
+def seed_user_data(user_id: str):
+    """Populate sample data for a new user."""
     client = _client()
     now = utc_now()
 
     warehouses = [
-        {"id": 1, "name": "Alpha Depot", "location": "Karachi"},
-        {"id": 2, "name": "Beta Hub", "location": "Lahore"},
+        {"id": 1, "name": "Alpha Depot",  "location": "Karachi"},
+        {"id": 2, "name": "Beta Hub",     "location": "Lahore"},
     ]
     suppliers = [
-        {"id": 1, "name": "Dairy Central", "contact": "info@dairy.com", "rating": 4.8, "reliability_score": 95.0, "lead_time_days": 3},
-        {"id": 2, "name": "BuildMart", "contact": "sales@buildmart.com", "rating": 4.5, "reliability_score": 88.0, "lead_time_days": 4},
-        {"id": 3, "name": "Speedy Supply", "contact": "fast@speedy.com", "rating": 4.0, "reliability_score": 90.0, "lead_time_days": 1},
+        {"id": 1, "name": "Dairy Central",  "contact": "info@dairy.com",    "rating": 4.8, "reliability_score": 95.0, "lead_time_days": 3},
+        {"id": 2, "name": "BuildMart",      "contact": "sales@buildmart.com","rating": 4.5, "reliability_score": 88.0, "lead_time_days": 4},
+        {"id": 3, "name": "Speedy Supply",  "contact": "fast@speedy.com",   "rating": 4.0, "reliability_score": 90.0, "lead_time_days": 1},
         {"id": 4, "name": "Discount Depot", "contact": "cheap@discount.com", "rating": 3.2, "reliability_score": 70.0, "lead_time_days": 5},
     ]
     products = [
-        {"id": 1, "sku": "MLK-001", "name": "Milk", "category": "Dairy", "variant": "Full Cream", "unit": "Liters", "cost_price": 100.0, "selling_price": 150.0, "supplier_id": 1},
-        {"id": 2, "sku": "WR-001", "name": "Wire", "category": "Hardware", "variant": "10 Gauge Copper", "unit": "Meters", "cost_price": 30.0, "selling_price": 45.0, "supplier_id": 2},
-        {"id": 3, "sku": "PP-001", "name": "Pipe", "category": "Hardware", "variant": "PVC 2 inch", "unit": "Pieces", "cost_price": 80.0, "selling_price": 120.0, "supplier_id": 2},
-        {"id": 4, "sku": "BKR-001", "name": "Bread", "category": "Bakery", "variant": "Whole Wheat", "unit": "Loaves", "cost_price": 40.0, "selling_price": 60.0, "supplier_id": 1},
+        {"id": 1, "sku": "MLK-001", "name": "Milk",  "category": "Dairy",    "variant": "Full Cream",       "unit": "Liters", "cost_price": 100.0, "selling_price": 150.0, "supplier_id": 1},
+        {"id": 2, "sku": "WR-001",  "name": "Wire",  "category": "Hardware", "variant": "10 Gauge Copper", "unit": "Meters", "cost_price":  30.0, "selling_price":  45.0, "supplier_id": 2},
+        {"id": 3, "sku": "PP-001",  "name": "Pipe",  "category": "Hardware", "variant": "PVC 2 inch",       "unit": "Pieces", "cost_price":  80.0, "selling_price": 120.0, "supplier_id": 2},
+        {"id": 4, "sku": "BKR-001", "name": "Bread", "category": "Bakery",   "variant": "Whole Wheat",      "unit": "Loaves", "cost_price":  40.0, "selling_price":  60.0, "supplier_id": 1},
     ]
-    product_warehouses = [
-        {"product_id": 1, "warehouse_id": 1, "stock": 25.0, "reorder_threshold": 5.0},
-        {"product_id": 1, "warehouse_id": 2, "stock": 10.0, "reorder_threshold": 5.0},
+    stock_records = [
+        {"product_id": 1, "warehouse_id": 1, "stock": 25.0,  "reorder_threshold": 5.0},
+        {"product_id": 1, "warehouse_id": 2, "stock": 10.0,  "reorder_threshold": 5.0},
         {"product_id": 2, "warehouse_id": 1, "stock": 100.0, "reorder_threshold": 15.0},
-        {"product_id": 3, "warehouse_id": 2, "stock": 50.0, "reorder_threshold": 10.0},
-        {"product_id": 4, "warehouse_id": 1, "stock": 15.0, "reorder_threshold": 20.0},
+        {"product_id": 3, "warehouse_id": 2, "stock": 50.0,  "reorder_threshold": 10.0},
+        {"product_id": 4, "warehouse_id": 1, "stock": 15.0,  "reorder_threshold": 20.0},
     ]
     transactions = [
-        {"product_id": 1, "warehouse_id": 1, "type": "SALE", "reason": None, "quantity": 30.0, "total_value": 4500.0, "timestamp": (now - timedelta(days=30)).isoformat()},
-        {"product_id": 4, "warehouse_id": 1, "type": "SALE", "reason": None, "quantity": 45.0, "total_value": 2700.0, "timestamp": (now - timedelta(days=30)).isoformat()},
+        {"product_id": 1, "warehouse_id": 1, "type": "SALE",    "reason": None, "quantity": 30.0, "total_value": 4500.0, "timestamp": (now - timedelta(days=30)).isoformat()},
+        {"product_id": 4, "warehouse_id": 1, "type": "SALE",    "reason": None, "quantity": 45.0, "total_value": 2700.0, "timestamp": (now - timedelta(days=30)).isoformat()},
+        {"product_id": 2, "warehouse_id": 1, "type": "RESTOCK", "reason": None, "quantity": 50.0, "total_value": 1500.0, "timestamp": (now - timedelta(days=20)).isoformat()},
     ]
 
-    for item in warehouses:
-        client.collection(WAREHOUSES_COLLECTION).document(str(item["id"])).set(item)
-    for item in suppliers:
-        client.collection(SUPPLIERS_COLLECTION).document(str(item["id"])).set(item)
-    for item in products:
-        client.collection(PRODUCTS_COLLECTION).document(str(item["id"])).set(item)
-    for item in product_warehouses:
-        doc_id = f'{item["product_id"]}:{item["warehouse_id"]}'
-        client.collection(PRODUCT_WAREHOUSES_COLLECTION).document(doc_id).set(item)
-    for item in transactions:
-        client.collection(TRANSACTIONS_COLLECTION).add(item)
+    batch = client.batch()
+
+    for w in warehouses:
+        batch.set(_col(user_id, COL_WAREHOUSES).document(str(w["id"])), w)
+    for s in suppliers:
+        batch.set(_col(user_id, COL_SUPPLIERS).document(str(s["id"])), s)
+    for p in products:
+        batch.set(_col(user_id, COL_PRODUCTS).document(str(p["id"])), {**p, "created_at": now.isoformat()})
+    for sr in stock_records:
+        doc_id = f'{sr["product_id"]}:{sr["warehouse_id"]}'
+        batch.set(_col(user_id, COL_STOCK).document(doc_id), {**sr, "updated_at": now.isoformat()})
+    batch.commit()
+
+    for tx in transactions:
+        _col(user_id, COL_TRANSACTIONS).add({**tx})
+
+    mark_user_onboarded(user_id)
 
 
-def get_db_connection():
-    raise RuntimeError("SQLite has been removed from the production data path. Use Firestore-backed helpers instead.")
+def init_empty_user(user_id: str):
+    """Create a minimal empty workspace (1 warehouse) for a new user."""
+    _col(user_id, COL_WAREHOUSES).document("1").set(
+        {"id": 1, "name": "Main Warehouse", "location": "My City"}
+    )
+    mark_user_onboarded(user_id)
 
 
-def get_suppliers() -> List[Dict[str, Any]]:
-    return [_doc_data(doc) for doc in _collection(SUPPLIERS_COLLECTION).order_by("id").stream()]
+# ── Warehouses ────────────────────────────────────────────────────────────────
+
+def get_warehouses(user_id: str = DEFAULT_USER_ID) -> List[Dict[str, Any]]:
+    return [_doc_data(doc) for doc in _col(user_id, COL_WAREHOUSES).order_by("id").stream()]
 
 
-def get_warehouses() -> List[Dict[str, Any]]:
-    return [_doc_data(doc) for doc in _collection(WAREHOUSES_COLLECTION).order_by("id").stream()]
-
-
-def get_warehouse_by_id(warehouse_id: int) -> Optional[Dict[str, Any]]:
-    snap = _collection(WAREHOUSES_COLLECTION).document(str(int(warehouse_id))).get()
+def get_warehouse_by_id(warehouse_id: int, user_id: str = DEFAULT_USER_ID) -> Optional[Dict[str, Any]]:
+    snap = _col(user_id, COL_WAREHOUSES).document(str(int(warehouse_id))).get()
     return _doc_data(snap) if snap.exists else None
 
 
-def _find_supplier_by_name(name: str) -> Optional[Dict[str, Any]]:
-    normalized = name.strip().lower()
-    for doc in _collection(SUPPLIERS_COLLECTION).stream():
-        data = _doc_data(doc)
-        if data.get("name", "").strip().lower() == normalized:
-            return data
-    return None
-
-
-def _find_product_by_sku(sku: str) -> Optional[Dict[str, Any]]:
-    normalized = sku.strip().lower()
-    for doc in _collection(PRODUCTS_COLLECTION).stream():
-        data = _doc_data(doc)
-        if data.get("sku", "").strip().lower() == normalized:
-            return data
-    return None
-
-
-def get_product_by_id(product_id: int) -> Optional[Dict[str, Any]]:
-    snap = _collection(PRODUCTS_COLLECTION).document(str(int(product_id))).get()
-    return _doc_data(snap) if snap.exists else None
-
-
-def get_product_by_name(name: str) -> Optional[Dict[str, Any]]:
-    normalized = name.strip().lower()
-    for doc in _collection(PRODUCTS_COLLECTION).stream():
-        data = _doc_data(doc)
-        if data.get("name", "").strip().lower() == normalized:
-            return data
-    return None
-
-
-def search_products_by_name_fragment(fragment: str) -> List[Dict[str, Any]]:
-    normalized = fragment.strip().lower()
-    return [
-        _doc_data(doc)
-        for doc in _collection(PRODUCTS_COLLECTION).stream()
-        if normalized in (_doc_data(doc).get("name", "").lower())
-    ]
-
-
-def get_stock_record(product_id: int, warehouse_id: int) -> Optional[Dict[str, Any]]:
-    snap = _collection(PRODUCT_WAREHOUSES_COLLECTION).document(f"{int(product_id)}:{int(warehouse_id)}").get()
-    if not snap.exists:
-        return None
-    data = _doc_data(snap)
-    product = get_product_by_id(int(product_id)) or {}
-    warehouse = get_warehouse_by_id(int(warehouse_id)) or {}
-    return {
-        **data,
-        "product_name": product.get("name"),
-        "unit": product.get("unit"),
-        "warehouse_name": warehouse.get("name"),
-    }
-
-
-def add_supplier(name: str, contact: str, rating: float, reliability_score: float, lead_time_days: int) -> Dict[str, Any]:
-    if _find_supplier_by_name(name):
-        return {"status": "error", "message": f"Supplier '{name}' already exists."}
-
-    supplier_id = _next_numeric_id(SUPPLIERS_COLLECTION)
-    _collection(SUPPLIERS_COLLECTION).document(str(supplier_id)).set({
-        "id": supplier_id,
+def add_warehouse(name: str, location: str, user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
+    wid = _next_numeric_id(user_id, COL_WAREHOUSES)
+    _col(user_id, COL_WAREHOUSES).document(str(wid)).set({
+        "id": wid,
         "name": name,
-        "contact": contact,
-        "rating": rating,
-        "reliability_score": reliability_score,
-        "lead_time_days": lead_time_days,
+        "location": location,
         "created_at": utc_now().isoformat(),
     })
+    log_activity(user_id, "ADD", "warehouse", {"id": wid, "name": name})
+    return {"status": "success", "id": wid}
+
+
+def update_warehouse(warehouse_id: Any, name: Optional[str] = None, location: Optional[str] = None,
+                     user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
+    db_id = str(warehouse_id)
+    ref = _col(user_id, COL_WAREHOUSES).document(db_id)
+    if not ref.get().exists:
+        try:
+            int_id = str(int(float(warehouse_id)))
+            ref = _col(user_id, COL_WAREHOUSES).document(int_id)
+        except Exception:
+            pass
+    if not ref.get().exists:
+        return {"status": "error", "message": f"Warehouse {warehouse_id} not found."}
+    
+    updates = {}
+    if name is not None:
+        updates["name"] = name
+    if location is not None:
+        updates["location"] = location
+        
+    if updates:
+        ref.update(updates)
+    log_activity(user_id, "EDIT", "warehouse", {"id": warehouse_id, **updates})
+    return {"status": "success", "id": warehouse_id}
+
+
+def delete_warehouse(warehouse_id: Any, user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
+    db_id = str(warehouse_id)
+    ref = _col(user_id, COL_WAREHOUSES).document(db_id)
+    if not ref.get().exists:
+        try:
+            int_id = str(int(float(warehouse_id)))
+            ref = _col(user_id, COL_WAREHOUSES).document(int_id)
+        except Exception:
+            pass
+    if not ref.get().exists:
+        return {"status": "error", "message": f"Warehouse {warehouse_id} not found."}
+    
+    # Optional: prevent deleting the last warehouse
+    all_wh = list(_col(user_id, COL_WAREHOUSES).stream())
+    if len(all_wh) <= 1:
+        return {"status": "error", "message": "Cannot delete the only remaining warehouse."}
+        
+    ref.delete()
+    log_activity(user_id, "DELETE", "warehouse", {"id": warehouse_id})
+    return {"status": "success", "id": warehouse_id}
+
+
+# ── Suppliers ─────────────────────────────────────────────────────────────────
+
+def get_suppliers(user_id: str = DEFAULT_USER_ID) -> List[Dict[str, Any]]:
+    return [_doc_data(doc) for doc in _col(user_id, COL_SUPPLIERS).order_by("id").stream()]
+
+
+def _find_supplier_by_name(name: str, user_id: str) -> Optional[Dict[str, Any]]:
+    norm = name.strip().lower()
+    for doc in _col(user_id, COL_SUPPLIERS).stream():
+        data = _doc_data(doc)
+        if data.get("name", "").strip().lower() == norm:
+            return data
+    return None
+
+
+def add_supplier(name: str, contact: str, rating: float, reliability_score: float,
+                 lead_time_days: int, user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
+    if _find_supplier_by_name(name, user_id):
+        return {"status": "error", "message": f"Supplier '{name}' already exists."}
+    sid = _next_numeric_id(user_id, COL_SUPPLIERS)
+    _col(user_id, COL_SUPPLIERS).document(str(sid)).set({
+        "id": sid, "name": name, "contact": contact, "rating": rating,
+        "reliability_score": reliability_score, "lead_time_days": lead_time_days,
+        "created_at": utc_now().isoformat(),
+    })
+    log_activity(user_id, "ADD", "supplier", {"id": sid, "name": name})
+    return {"status": "success", "id": sid}
+
+
+def update_supplier(supplier_id: Any, user_id: str = DEFAULT_USER_ID, **kwargs) -> Dict[str, Any]:
+    db_id = str(supplier_id)
+    ref = _col(user_id, COL_SUPPLIERS).document(db_id)
+    if not ref.get().exists:
+        try:
+            int_id = str(int(float(supplier_id)))
+            ref = _col(user_id, COL_SUPPLIERS).document(int_id)
+        except Exception:
+            pass
+    if not ref.get().exists:
+        return {"status": "error", "message": f"Supplier {supplier_id} not found."}
+    updates = {k: v for k, v in kwargs.items() if v is not None}
+    if updates:
+        ref.update(updates)
+    log_activity(user_id, "EDIT", "supplier", {"id": supplier_id, **updates})
     return {"status": "success", "id": supplier_id}
 
 
-def add_product(sku: str, name: str, category: str, variant: str, unit: str, cost_price: float, selling_price: float, supplier_id: int, warehouse_id: int, initial_stock: float, reorder_threshold: float) -> Dict[str, Any]:
-    if _find_product_by_sku(sku):
-        return {"status": "error", "message": f"Product SKU '{sku}' already exists."}
-
-    product_id = _next_numeric_id(PRODUCTS_COLLECTION)
-    _collection(PRODUCTS_COLLECTION).document(str(product_id)).set({
-        "id": product_id,
-        "sku": sku,
-        "name": name,
-        "category": category,
-        "variant": variant,
-        "unit": unit,
-        "cost_price": cost_price,
-        "selling_price": selling_price,
-        "supplier_id": supplier_id,
-        "created_at": utc_now().isoformat(),
-    })
-    _collection(PRODUCT_WAREHOUSES_COLLECTION).document(f"{product_id}:{int(warehouse_id)}").set({
-        "product_id": product_id,
-        "warehouse_id": int(warehouse_id),
-        "stock": float(initial_stock),
-        "reorder_threshold": float(reorder_threshold),
-        "updated_at": utc_now().isoformat(),
-    })
-    return {"status": "success", "id": product_id}
+def delete_supplier(supplier_id: Any, user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
+    db_id = str(supplier_id)
+    ref = _col(user_id, COL_SUPPLIERS).document(db_id)
+    if not ref.get().exists:
+        try:
+            int_id = str(int(float(supplier_id)))
+            ref = _col(user_id, COL_SUPPLIERS).document(int_id)
+        except Exception:
+            pass
+    if not ref.get().exists:
+        return {"status": "error", "message": f"Supplier {supplier_id} not found."}
+    ref.delete()
+    log_activity(user_id, "DELETE", "supplier", {"id": supplier_id})
+    return {"status": "success", "id": supplier_id}
 
 
-def get_products() -> List[Dict[str, Any]]:
-    suppliers = {item["id"]: item for item in get_suppliers()}
-    warehouses = {item["id"]: item for item in get_warehouses()}
-    products = {item["id"]: item for item in [_doc_data(doc) for doc in _collection(PRODUCTS_COLLECTION).stream()]}
+def delete_all_suppliers(user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
+    docs = list(_col(user_id, COL_SUPPLIERS).stream())
+    for doc in docs:
+        doc.reference.delete()
+    log_activity(user_id, "DELETE_ALL", "supplier", {"count": len(docs)})
+    return {"status": "success", "deleted": len(docs)}
+
+
+# ── Products ──────────────────────────────────────────────────────────────────
+
+def _find_product_by_sku(sku: str, user_id: str) -> Optional[Dict[str, Any]]:
+    norm = sku.strip().lower()
+    for doc in _col(user_id, COL_PRODUCTS).stream():
+        data = _doc_data(doc)
+        if data.get("sku", "").strip().lower() == norm:
+            return data
+    return None
+
+
+def get_product_by_id(product_id: int, user_id: str = DEFAULT_USER_ID) -> Optional[Dict[str, Any]]:
+    snap = _col(user_id, COL_PRODUCTS).document(str(int(product_id))).get()
+    return _doc_data(snap) if snap.exists else None
+
+
+def get_product_by_name(name: str, user_id: str = DEFAULT_USER_ID) -> Optional[Dict[str, Any]]:
+    norm = name.strip().lower()
+    for doc in _col(user_id, COL_PRODUCTS).stream():
+        data = _doc_data(doc)
+        if data.get("name", "").strip().lower() == norm:
+            return data
+    return None
+
+
+def search_products_by_name_fragment(fragment: str, user_id: str = DEFAULT_USER_ID) -> List[Dict[str, Any]]:
+    norm = fragment.strip().lower()
+    return [
+        _doc_data(doc) for doc in _col(user_id, COL_PRODUCTS).stream()
+        if norm in _doc_data(doc).get("name", "").lower()
+    ]
+
+
+def get_stock_record(product_id: int, warehouse_id: int, user_id: str = DEFAULT_USER_ID) -> Optional[Dict[str, Any]]:
+    snap = _col(user_id, COL_STOCK).document(f"{int(product_id)}:{int(warehouse_id)}").get()
+    if not snap.exists:
+        return None
+    data = _doc_data(snap)
+    product   = get_product_by_id(int(product_id), user_id) or {}
+    warehouse = get_warehouse_by_id(int(warehouse_id), user_id) or {}
+    return {**data, "product_name": product.get("name"), "unit": product.get("unit"), "warehouse_name": warehouse.get("name")}
+
+
+def get_products(user_id: str = DEFAULT_USER_ID) -> List[Dict[str, Any]]:
+    suppliers  = {item["id"]: item for item in get_suppliers(user_id)}
+    warehouses = {item["id"]: item for item in get_warehouses(user_id)}
+    products   = {item["id"]: item for item in [_doc_data(d) for d in _col(user_id, COL_PRODUCTS).stream()]}
 
     rows: List[Dict[str, Any]] = []
-    for doc in _collection(PRODUCT_WAREHOUSES_COLLECTION).stream():
+    for doc in _col(user_id, COL_STOCK).stream():
         stock_data = _doc_data(doc)
         product = products.get(stock_data["product_id"])
         if not product:
             continue
         rows.append({
             **product,
-            "supplier_name": suppliers.get(product.get("supplier_id"), {}).get("name"),
-            "warehouse_id": stock_data["warehouse_id"],
+            "supplier_name":  suppliers.get(product.get("supplier_id"), {}).get("name"),
+            "warehouse_id":   stock_data["warehouse_id"],
             "warehouse_name": warehouses.get(stock_data["warehouse_id"], {}).get("name"),
-            "stock": stock_data["stock"],
+            "stock":          stock_data["stock"],
             "reorder_threshold": stock_data["reorder_threshold"],
         })
     return rows
 
 
-def _write_transaction(cursor_product_id: int, warehouse_id: int, tx_type: str, reason: Optional[str], qty: float, total_value: float) -> Dict[str, Any]:
-    stock_record = get_stock_record(cursor_product_id, warehouse_id)
+def add_product(sku: str, name: str, category: str, variant: str, unit: str,
+                cost_price: float, selling_price: float, supplier_id: int,
+                warehouse_id: int, initial_stock: float, reorder_threshold: float,
+                user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
+    if _find_product_by_sku(sku, user_id):
+        return {"status": "error", "message": f"SKU '{sku}' already exists."}
+    pid = _next_numeric_id(user_id, COL_PRODUCTS)
+    _col(user_id, COL_PRODUCTS).document(str(pid)).set({
+        "id": pid, "sku": sku, "name": name, "category": category, "variant": variant,
+        "unit": unit, "cost_price": cost_price, "selling_price": selling_price,
+        "supplier_id": supplier_id, "created_at": utc_now().isoformat(),
+    })
+    _col(user_id, COL_STOCK).document(f"{pid}:{int(warehouse_id)}").set({
+        "product_id": pid, "warehouse_id": int(warehouse_id),
+        "stock": float(initial_stock), "reorder_threshold": float(reorder_threshold),
+        "updated_at": utc_now().isoformat(),
+    })
+    log_activity(user_id, "ADD", "product", {"id": pid, "name": name, "stock": initial_stock})
+    return {"status": "success", "id": pid}
+
+
+def update_product(product_id: int, user_id: str = DEFAULT_USER_ID, warehouse_id: int = 1,
+                   name=None, category=None, variant=None, unit=None,
+                   cost_price=None, selling_price=None, supplier_id=None,
+                   reorder_threshold=None, stock=None) -> Dict[str, Any]:
+    ref = _col(user_id, COL_PRODUCTS).document(str(int(product_id)))
+    if not ref.get().exists:
+        return {"status": "error", "message": f"Product {product_id} not found."}
+    updates = {k: v for k, v in dict(name=name, category=category, variant=variant, unit=unit,
+                                     cost_price=cost_price, selling_price=selling_price,
+                                     supplier_id=supplier_id).items() if v is not None}
+    if updates:
+        ref.update(updates)
+    if stock is not None or reorder_threshold is not None:
+        wh_ref = _col(user_id, COL_STOCK).document(f"{int(product_id)}:{int(warehouse_id)}")
+        if wh_ref.get().exists:
+            wh_upd: Dict[str, Any] = {"updated_at": utc_now().isoformat()}
+            if stock is not None: wh_upd["stock"] = float(stock)
+            if reorder_threshold is not None: wh_upd["reorder_threshold"] = float(reorder_threshold)
+            wh_ref.update(wh_upd)
+    log_activity(user_id, "EDIT", "product", {"id": product_id, **updates})
+    return {"status": "success", "id": product_id}
+
+
+def delete_product(product_id: int, user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
+    ref = _col(user_id, COL_PRODUCTS).document(str(int(product_id)))
+    if not ref.get().exists:
+        return {"status": "error", "message": f"Product {product_id} not found."}
+    for doc in _col(user_id, COL_STOCK).stream():
+        if _doc_data(doc).get("product_id") == int(product_id):
+            doc.reference.delete()
+    for doc in _col(user_id, COL_TRANSACTIONS).stream():
+        if _doc_data(doc).get("product_id") == int(product_id):
+            doc.reference.delete()
+    ref.delete()
+    log_activity(user_id, "DELETE", "product", {"id": product_id})
+    return {"status": "success", "id": product_id}
+
+
+# ── Transactions ──────────────────────────────────────────────────────────────
+
+def _write_transaction(product_id: int, warehouse_id: int, tx_type: str, reason: Optional[str],
+                       qty: float, total_value: float, user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
+    stock_record = get_stock_record(product_id, warehouse_id, user_id)
     if not stock_record:
-        raise ValueError(f"Product ID {cursor_product_id} not found in Warehouse ID {warehouse_id}.")
+        raise ValueError(f"Product {product_id} not found in Warehouse {warehouse_id}.")
 
     current_stock = float(stock_record["stock"])
     reorder_threshold = float(stock_record.get("reorder_threshold", 0.0))
-    delta = qty if tx_type in {"RESTOCK", "ADJUSTMENT"} else -qty
+    delta     = qty if tx_type in {"RESTOCK", "ADJUSTMENT"} else -qty
     new_stock = current_stock + delta
     if new_stock < 0 and tx_type != "ADJUSTMENT":
-        raise ValueError(f"Insufficient stock in warehouse. Available: {current_stock}")
+        raise ValueError(f"Insufficient stock. Available: {current_stock}")
 
-    _collection(PRODUCT_WAREHOUSES_COLLECTION).document(f"{int(cursor_product_id)}:{int(warehouse_id)}").set({
-        "product_id": int(cursor_product_id),
-        "warehouse_id": int(warehouse_id),
-        "stock": new_stock,
-        "reorder_threshold": reorder_threshold,
+    _col(user_id, COL_STOCK).document(f"{int(product_id)}:{int(warehouse_id)}").set({
+        "product_id": int(product_id), "warehouse_id": int(warehouse_id),
+        "stock": new_stock, "reorder_threshold": reorder_threshold,
         "updated_at": utc_now().isoformat(),
     })
-    _collection(TRANSACTIONS_COLLECTION).add({
-        "product_id": int(cursor_product_id),
-        "warehouse_id": int(warehouse_id),
-        "type": tx_type,
-        "reason": reason,
-        "quantity": float(qty),
-        "total_value": float(total_value),
-        "timestamp": utc_now().isoformat(),
+    product = get_product_by_id(product_id, user_id) or {}
+    tx_doc = {
+        "product_id": int(product_id), "warehouse_id": int(warehouse_id),
+        "type": tx_type, "reason": reason, "quantity": float(qty),
+        "total_value": float(total_value), "timestamp": utc_now().isoformat(),
+        "product_name": product.get("name", ""), "unit": product.get("unit", ""),
+    }
+    _col(user_id, COL_TRANSACTIONS).add(tx_doc)
+    log_activity(user_id, tx_type, "transaction", {
+        "product_id": product_id, "product_name": product.get("name"),
+        "qty": qty, "value": total_value, "warehouse_id": warehouse_id,
     })
     return {"status": "success", "remaining_stock": new_stock, "reorder_warning": new_stock <= reorder_threshold}
 
 
-def record_sale(product_id: int, warehouse_id: int, quantity: float, revenue: float) -> Dict[str, Any]:
+def record_sale(product_id: int, warehouse_id: int, quantity: float,
+                revenue: float, user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
     try:
-        return _write_transaction(product_id, warehouse_id, "SALE", None, quantity, revenue)
+        return _write_transaction(product_id, warehouse_id, "SALE", None, quantity, revenue, user_id)
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
-def record_restock(product_id: int, warehouse_id: int, quantity: float, cost: float) -> Dict[str, Any]:
+def record_restock(product_id: int, warehouse_id: int, quantity: float,
+                   cost: float, user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
     try:
-        return _write_transaction(product_id, warehouse_id, "RESTOCK", None, quantity, cost)
+        return _write_transaction(product_id, warehouse_id, "RESTOCK", None, quantity, cost, user_id)
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
-def record_adjustment(product_id: int, warehouse_id: int, quantity_diff: float, reason: str) -> Dict[str, Any]:
+def record_adjustment(product_id: int, warehouse_id: int, quantity_diff: float,
+                      reason: str, user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
     if not reason:
-        return {"status": "error", "message": "Adjustment requires an audit reason."}
+        return {"status": "error", "message": "Adjustment requires a reason."}
     try:
-        return _write_transaction(product_id, warehouse_id, "ADJUSTMENT", reason, quantity_diff, 0.0)
+        return _write_transaction(product_id, warehouse_id, "ADJUSTMENT", reason, quantity_diff, 0.0, user_id)
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
-def get_transactions() -> List[Dict[str, Any]]:
-    products = {item["id"]: item for item in get_products()}
-    warehouses = {item["id"]: item for item in get_warehouses()}
-    rows = [
-        _doc_data(doc)
-        for doc in _collection(TRANSACTIONS_COLLECTION).order_by("timestamp", direction=firestore.Query.DESCENDING).stream()
-    ]
+def get_transactions(user_id: str = DEFAULT_USER_ID) -> List[Dict[str, Any]]:
+    products   = {item["id"]: item for item in get_products(user_id)}
+    warehouses = {item["id"]: item for item in get_warehouses(user_id)}
+    rows = [_doc_data(doc) for doc in _col(user_id, COL_TRANSACTIONS)
+            .order_by("timestamp", direction=firestore.Query.DESCENDING).stream()]
     for row in rows:
-        product = products.get(row["product_id"], {})
-        warehouse = warehouses.get(row["warehouse_id"], {})
-        row["product_name"] = product.get("name")
-        row["unit"] = product.get("unit")
+        product   = products.get(row.get("product_id"), {})
+        warehouse = warehouses.get(row.get("warehouse_id"), {})
+        row["product_name"]   = row.get("product_name") or product.get("name")
+        row["unit"]           = row.get("unit") or product.get("unit")
         row["warehouse_name"] = warehouse.get("name")
     return rows
 
 
-def get_demand_predictions() -> List[Dict[str, Any]]:
-    today = utc_now()
-    ninety_days_ago = today - timedelta(days=90)
-    products = get_products()
-    transactions = [
-        row
-        for row in get_transactions()
-        if _timestamp_value(row.get("timestamp")) >= ninety_days_ago and row.get("type") == "SALE"
-    ]
+# ── Orders ────────────────────────────────────────────────────────────────────
 
-    weekly_sales: Dict[tuple, list[float]] = defaultdict(lambda: [0.0] * 13)
-    meta: Dict[tuple, dict] = {}
-
-    for product in products:
-        key = (product["id"], product["warehouse_id"])
-        meta[key] = {
-            "product_id": product["id"],
-            "product_name": product["name"],
-            "warehouse_name": product.get("warehouse_name"),
-            "current_stock": product["stock"],
-            "unit": product["unit"],
-        }
-
-    for tx in transactions:
-        key = (tx["product_id"], tx["warehouse_id"])
-        if key not in meta:
-            continue
-        tx_date = _timestamp_value(tx.get("timestamp"))
-        days_ago = (today - tx_date).days
-        week_idx = min(int(days_ago // 7), 12)
-        bucket = 12 - week_idx
-        weekly_sales[key][bucket] += float(tx.get("quantity", 0.0))
-
-    predictions = []
-    alpha = 0.4
-    for key, item in meta.items():
-        weeks = weekly_sales[key]
-        non_zero = [week for week in weeks if week > 0]
-        if non_zero:
-            smoothed = weeks[0]
-            for week in weeks[1:]:
-                smoothed = alpha * week + (1 - alpha) * smoothed
-            daily_velocity = smoothed / 7.0
-            recent_avg = sum(weeks[9:13]) / 4.0
-            older_avg = sum(weeks[5:9]) / 4.0
-            if older_avg > 0:
-                trend_pct = ((recent_avg - older_avg) / older_avg) * 100
-                trend = "UP" if trend_pct > 5 else "DOWN" if trend_pct < -5 else "STABLE"
-            else:
-                trend_pct = 0.0
-                trend = "STABLE"
-            confidence = "HIGH" if len(non_zero) >= 6 else "MEDIUM" if len(non_zero) >= 3 else "LOW"
-        else:
-            daily_velocity = 0.5
-            trend = "STABLE"
-            trend_pct = 0.0
-            confidence = "LOW"
-
-        stock = float(item["current_stock"])
-        days_remaining = stock / daily_velocity if daily_velocity > 0 else 9999
-        stock_out_date = (today + timedelta(days=days_remaining)).strftime("%Y-%m-%d")
-
-        predictions.append({
-            "product_id": item["product_id"],
-            "name": item["product_name"],
-            "warehouse_name": item["warehouse_name"],
-            "current_stock": round(stock, 2),
-            "unit": item["unit"],
-            "daily_velocity": round(daily_velocity, 2),
-            "days_remaining": round(min(days_remaining, 9999), 1),
-            "estimated_stockout_date": stock_out_date,
-            "predicted_demand_30d": round(daily_velocity * 30, 1),
-            "trend": trend,
-            "trend_pct": round(trend_pct, 1),
-            "confidence": confidence,
-            "forecast_model": "SES_alpha0.4",
-        })
-
-    return predictions
-
-
-ORDERS_COLLECTION = "orders"
-
-
-# ─── Supplier CRUD ────────────────────────────────────────────────────────────
-
-def update_supplier(supplier_id: int, name: Optional[str] = None, contact: Optional[str] = None,
-                    rating: Optional[float] = None, reliability_score: Optional[float] = None,
-                    lead_time_days: Optional[int] = None) -> Dict[str, Any]:
-    doc_ref = _collection(SUPPLIERS_COLLECTION).document(str(int(supplier_id)))
-    snap = doc_ref.get()
-    if not snap.exists:
-        return {"status": "error", "message": f"Supplier ID {supplier_id} not found."}
-    updates: Dict[str, Any] = {}
-    if name is not None:
-        updates["name"] = name
-    if contact is not None:
-        updates["contact"] = contact
-    if rating is not None:
-        updates["rating"] = rating
-    if reliability_score is not None:
-        updates["reliability_score"] = reliability_score
-    if lead_time_days is not None:
-        updates["lead_time_days"] = lead_time_days
-    doc_ref.update(updates)
-    return {"status": "success", "id": supplier_id}
-
-
-def delete_supplier(supplier_id: int) -> Dict[str, Any]:
-    doc_ref = _collection(SUPPLIERS_COLLECTION).document(str(int(supplier_id)))
-    if not doc_ref.get().exists:
-        return {"status": "error", "message": f"Supplier ID {supplier_id} not found."}
-    doc_ref.delete()
-    return {"status": "success", "id": supplier_id}
-
-
-def delete_all_suppliers() -> Dict[str, Any]:
-    docs = list(_collection(SUPPLIERS_COLLECTION).stream())
-    for doc in docs:
-        doc.reference.delete()
-    return {"status": "success", "deleted": len(docs)}
-
-
-# ─── Product CRUD ─────────────────────────────────────────────────────────────
-
-def update_product(product_id: int, name: Optional[str] = None, category: Optional[str] = None,
-                   variant: Optional[str] = None, unit: Optional[str] = None,
-                   cost_price: Optional[float] = None, selling_price: Optional[float] = None,
-                   supplier_id: Optional[int] = None, reorder_threshold: Optional[float] = None,
-                   stock: Optional[float] = None, warehouse_id: Optional[int] = 1) -> Dict[str, Any]:
-    doc_ref = _collection(PRODUCTS_COLLECTION).document(str(int(product_id)))
-    snap = doc_ref.get()
-    if not snap.exists:
-        return {"status": "error", "message": f"Product ID {product_id} not found."}
-    updates: Dict[str, Any] = {}
-    if name is not None:
-        updates["name"] = name
-    if category is not None:
-        updates["category"] = category
-    if variant is not None:
-        updates["variant"] = variant
-    if unit is not None:
-        updates["unit"] = unit
-    if cost_price is not None:
-        updates["cost_price"] = cost_price
-    if selling_price is not None:
-        updates["selling_price"] = selling_price
-    if supplier_id is not None:
-        updates["supplier_id"] = supplier_id
-    if updates:
-        doc_ref.update(updates)
-    # Update stock/threshold in product_warehouses if provided
-    if stock is not None or reorder_threshold is not None:
-        wh_id = int(warehouse_id) if warehouse_id else 1
-        wh_ref = _collection(PRODUCT_WAREHOUSES_COLLECTION).document(f"{int(product_id)}:{wh_id}")
-        wh_snap = wh_ref.get()
-        if wh_snap.exists:
-            wh_updates: Dict[str, Any] = {"updated_at": utc_now().isoformat()}
-            if stock is not None:
-                wh_updates["stock"] = float(stock)
-            if reorder_threshold is not None:
-                wh_updates["reorder_threshold"] = float(reorder_threshold)
-            wh_ref.update(wh_updates)
-    return {"status": "success", "id": product_id}
-
-
-def delete_product(product_id: int) -> Dict[str, Any]:
-    doc_ref = _collection(PRODUCTS_COLLECTION).document(str(int(product_id)))
-    if not doc_ref.get().exists:
-        return {"status": "error", "message": f"Product ID {product_id} not found."}
-    # Delete product_warehouses records for this product
-    wh_docs = _collection(PRODUCT_WAREHOUSES_COLLECTION).stream()
-    for doc in wh_docs:
-        data = _doc_data(doc)
-        if data.get("product_id") == int(product_id):
-            doc.reference.delete()
-    # Delete transactions for this product
-    tx_docs = _collection(TRANSACTIONS_COLLECTION).stream()
-    for doc in tx_docs:
-        data = _doc_data(doc)
-        if data.get("product_id") == int(product_id):
-            doc.reference.delete()
-    doc_ref.delete()
-    return {"status": "success", "id": product_id}
-
-
-# ─── Orders CRUD ──────────────────────────────────────────────────────────────
-
-def get_orders() -> List[Dict[str, Any]]:
-    products = {item["id"]: item for item in get_products()}
-    warehouses = {item["id"]: item for item in get_warehouses()}
+def get_orders(user_id: str = DEFAULT_USER_ID) -> List[Dict[str, Any]]:
+    products   = {item["id"]: item for item in get_products(user_id)}
+    warehouses = {item["id"]: item for item in get_warehouses(user_id)}
     rows = []
-    for doc in _collection(ORDERS_COLLECTION).stream():
+    for doc in _col(user_id, COL_ORDERS).stream():
         data = _doc_data(doc)
-        product = products.get(data.get("product_id"), {})
+        product   = products.get(data.get("product_id"), {})
         warehouse = warehouses.get(data.get("warehouse_id"), {})
         rows.append({
             **data,
-            "product_name": product.get("name", "Unknown"),
-            "unit": product.get("unit", ""),
+            "product_name":   product.get("name", "Unknown"),
+            "unit":           product.get("unit", ""),
             "warehouse_name": warehouse.get("name", ""),
         })
-    # Sort by created_at descending
     rows.sort(key=lambda r: r.get("created_at", ""), reverse=True)
     return rows
 
 
 def add_order(order_ref: str, customer_name: str, product_id: int, warehouse_id: int,
               quantity: float, unit_price: float, total_value: float,
-              status: str = "PENDING") -> Dict[str, Any]:
-    existing = list(_collection(ORDERS_COLLECTION).where("order_ref", "==", order_ref).limit(1).stream())
+              status: str = "PENDING", user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
+    existing = list(_col(user_id, COL_ORDERS).where("order_ref", "==", order_ref).limit(1).stream())
     if existing:
         return {"status": "error", "message": f"Order ref '{order_ref}' already exists."}
-    order_id = _next_numeric_id(ORDERS_COLLECTION)
-    _collection(ORDERS_COLLECTION).document(str(order_id)).set({
-        "id": order_id,
-        "order_ref": order_ref,
-        "customer_name": customer_name,
-        "product_id": int(product_id),
-        "warehouse_id": int(warehouse_id),
-        "quantity": float(quantity),
-        "unit_price": float(unit_price),
-        "total_value": float(total_value),
-        "status": status,
+    oid = _next_numeric_id(user_id, COL_ORDERS)
+    _col(user_id, COL_ORDERS).document(str(oid)).set({
+        "id": oid, "order_ref": order_ref, "customer_name": customer_name,
+        "product_id": int(product_id), "warehouse_id": int(warehouse_id),
+        "quantity": float(quantity), "unit_price": float(unit_price),
+        "total_value": float(total_value), "status": status,
         "created_at": utc_now().isoformat(),
     })
+    log_activity(user_id, "ORDER", "order", {"id": oid, "customer": customer_name, "status": status})
+    return {"status": "success", "id": oid}
+
+
+def update_order_status(order_id: int, status: str, user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
+    valid = {"PENDING", "PACKED", "DISPATCHED", "FULFILLED", "CANCELLED"}
+    if status not in valid:
+        return {"status": "error", "message": f"Invalid status '{status}'. Use: {valid}"}
+    ref = _col(user_id, COL_ORDERS).document(str(int(order_id)))
+    if not ref.get().exists:
+        return {"status": "error", "message": f"Order {order_id} not found."}
+    ref.update({"status": status, "updated_at": utc_now().isoformat()})
+    log_activity(user_id, "ORDER_STATUS", "order", {"id": order_id, "status": status})
     return {"status": "success", "id": order_id}
 
 
-def update_order_status(order_id: int, status: str) -> Dict[str, Any]:
-    valid_statuses = {"PENDING", "FULFILLED", "CANCELLED"}
-    if status not in valid_statuses:
-        return {"status": "error", "message": f"Invalid status '{status}'. Use: {valid_statuses}"}
-    doc_ref = _collection(ORDERS_COLLECTION).document(str(int(order_id)))
-    if not doc_ref.get().exists:
-        return {"status": "error", "message": f"Order ID {order_id} not found."}
-    doc_ref.update({"status": status, "updated_at": utc_now().isoformat()})
+def delete_order(order_id: int, user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
+    ref = _col(user_id, COL_ORDERS).document(str(int(order_id)))
+    if not ref.get().exists:
+        return {"status": "error", "message": f"Order {order_id} not found."}
+    ref.delete()
+    log_activity(user_id, "DELETE", "order", {"id": order_id})
     return {"status": "success", "id": order_id}
 
 
-def delete_order(order_id: int) -> Dict[str, Any]:
-    doc_ref = _collection(ORDERS_COLLECTION).document(str(int(order_id)))
-    if not doc_ref.get().exists:
-        return {"status": "error", "message": f"Order ID {order_id} not found."}
-    doc_ref.delete()
+def dispatch_order(order_id: int, courier_name: str, courier_phone: str,
+                   user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
+    ref = _col(user_id, COL_ORDERS).document(str(int(order_id)))
+    if not ref.get().exists:
+        return {"status": "error", "message": f"Order {order_id} not found."}
+    ref.update({
+        "status": "DISPATCHED",
+        "courier_name": courier_name,
+        "courier_phone": courier_phone,
+        "dispatched_at": utc_now().isoformat(),
+    })
+    log_activity(user_id, "DISPATCH", "order", {"id": order_id, "courier": courier_name})
     return {"status": "success", "id": order_id}
 
 
-# ─── Analytics ────────────────────────────────────────────────────────────────
+# ── Activity Log ──────────────────────────────────────────────────────────────
 
-def get_profit_summary() -> Dict[str, Any]:
-    """
-    Aggregate profit analytics from transaction history.
-    Returns total revenue, total cost, gross profit, margin per product and overall.
-    """
-    products_list = get_products()
-    products_map = {p["id"]: p for p in products_list}
-    transactions = get_transactions()
+def get_activity_log(user_id: str = DEFAULT_USER_ID, limit: int = 100) -> List[Dict[str, Any]]:
+    try:
+        docs = (_col(user_id, COL_ACTIVITY_LOG)
+                .order_by("timestamp", direction=firestore.Query.DESCENDING)
+                .limit(limit)
+                .stream())
+        return [{**_doc_data(doc), "log_id": doc.id} for doc in docs]
+    except Exception as e:
+        print(f"[ActivityLog] get error: {e}")
+        return []
 
-    # Per-product aggregation
+
+# ── Analytics ─────────────────────────────────────────────────────────────────
+
+def get_demand_predictions(user_id: str = DEFAULT_USER_ID) -> List[Dict[str, Any]]:
+    today = utc_now()
+    ninety_days_ago = today - timedelta(days=90)
+    products = get_products(user_id)
+    transactions = [
+        row for row in get_transactions(user_id)
+        if _timestamp_value(row.get("timestamp")) >= ninety_days_ago and row.get("type") == "SALE"
+    ]
+
+    weekly_sales: Dict[tuple, list] = defaultdict(lambda: [0.0] * 13)
+    meta: Dict[tuple, dict] = {}
+
+    for product in products:
+        key = (product["id"], product["warehouse_id"])
+        meta[key] = {
+            "product_id": product["id"], "product_name": product["name"],
+            "warehouse_name": product.get("warehouse_name"),
+            "current_stock": product["stock"], "unit": product["unit"],
+        }
+
+    for tx in transactions:
+        key = (tx["product_id"], tx["warehouse_id"])
+        if key not in meta:
+            continue
+        tx_date  = _timestamp_value(tx.get("timestamp"))
+        days_ago = (today - tx_date).days
+        week_idx = min(int(days_ago // 7), 12)
+        bucket   = 12 - week_idx
+        weekly_sales[key][bucket] += float(tx.get("quantity", 0.0))
+
+    predictions = []
+    alpha = 0.4
+    for key, item in meta.items():
+        weeks    = weekly_sales[key]
+        non_zero = [w for w in weeks if w > 0]
+        if non_zero:
+            smoothed = weeks[0]
+            for week in weeks[1:]:
+                smoothed = alpha * week + (1 - alpha) * smoothed
+            daily_velocity = smoothed / 7.0
+            recent_avg = sum(weeks[9:13]) / 4.0
+            older_avg  = sum(weeks[5:9]) / 4.0
+            if older_avg > 0:
+                trend_pct = ((recent_avg - older_avg) / older_avg) * 100
+                trend = "UP" if trend_pct > 5 else "DOWN" if trend_pct < -5 else "STABLE"
+            else:
+                trend_pct, trend = 0.0, "STABLE"
+            confidence = "HIGH" if len(non_zero) >= 6 else "MEDIUM" if len(non_zero) >= 3 else "LOW"
+        else:
+            daily_velocity, trend, trend_pct, confidence = 0.5, "STABLE", 0.0, "LOW"
+
+        stock = float(item["current_stock"])
+        days_remaining  = stock / daily_velocity if daily_velocity > 0 else 9999
+        stock_out_date  = (today + timedelta(days=days_remaining)).strftime("%Y-%m-%d")
+
+        predictions.append({
+            "product_id": item["product_id"], "name": item["product_name"],
+            "warehouse_name": item["warehouse_name"], "current_stock": round(stock, 2),
+            "unit": item["unit"], "daily_velocity": round(daily_velocity, 2),
+            "days_remaining": round(min(days_remaining, 9999), 1),
+            "estimated_stockout_date": stock_out_date,
+            "predicted_demand_30d": round(daily_velocity * 30, 1),
+            "trend": trend, "trend_pct": round(trend_pct, 1),
+            "confidence": confidence, "forecast_model": "SES_alpha0.4",
+        })
+    return predictions
+
+
+def get_reorder_suggestions(user_id: str = DEFAULT_USER_ID) -> List[Dict[str, Any]]:
+    suppliers = {item["id"]: item for item in get_suppliers(user_id)}
+    suggestions = []
+    for product in get_products(user_id):
+        if float(product["stock"]) > float(product["reorder_threshold"]):
+            continue
+        lead_time    = int(suppliers.get(product.get("supplier_id"), {}).get("lead_time_days") or 3)
+        stock        = float(product["stock"])
+        threshold    = float(product["reorder_threshold"])
+        daily_base   = max(threshold / 7.0, 0.5)
+        lead_demand  = daily_base * lead_time
+        sugg_qty     = round((lead_demand + threshold) * 1.2, 1)
+        days_of_stock = stock / daily_base if daily_base > 0 else 0
+        urgency = "CRITICAL" if stock == 0 else "HIGH" if days_of_stock <= lead_time else "MEDIUM"
+        supplier_name = suppliers.get(product.get("supplier_id"), {}).get("name") or "Default Supplier"
+        suggestions.append({
+            "product_id": product["id"], "product_name": product["name"],
+            "warehouse_name": product.get("warehouse_name"), "current_stock": round(stock, 2),
+            "threshold": threshold, "supplier_name": supplier_name,
+            "lead_time_days": lead_time, "days_of_stock_remaining": round(days_of_stock, 1),
+            "suggested_reorder_qty": sugg_qty, "urgency": urgency,
+            "message": f"[{urgency}] {product['name']} at {product.get('warehouse_name')}: {stock} left, {lead_time}d lead time. Order {sugg_qty} units from {supplier_name}.",
+        })
+    suggestions.sort(key=lambda x: {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2}.get(x["urgency"], 3))
+    return suggestions
+
+
+def get_profit_summary(user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
+    products_list = get_products(user_id)
+    products_map  = {p["id"]: p for p in products_list}
+    transactions  = get_transactions(user_id)
+
     product_stats: Dict[int, Dict[str, float]] = {}
     for tx in transactions:
         pid = tx.get("product_id")
@@ -590,7 +712,6 @@ def get_profit_summary() -> Dict[str, Any]:
         if tx_type == "SALE":
             product_stats[pid]["revenue"] += val
             product_stats[pid]["qty_sold"] += qty
-            # Estimate cost from product cost_price
             p = products_map.get(pid, {})
             product_stats[pid]["cost"] += qty * float(p.get("cost_price", 0))
         elif tx_type == "RESTOCK":
@@ -598,85 +719,31 @@ def get_profit_summary() -> Dict[str, Any]:
             product_stats[pid]["qty_restocked"] += qty
 
     per_product = []
-    total_revenue = 0.0
-    total_cost = 0.0
-
+    total_revenue = total_cost = 0.0
     for pid, stats in product_stats.items():
         p = products_map.get(pid, {})
-        revenue = stats["revenue"]
-        cost = stats["cost"]
-        profit = revenue - cost
-        margin = (profit / revenue * 100) if revenue > 0 else 0.0
-        total_revenue += revenue
-        total_cost += cost
+        revenue = stats["revenue"]; cost = stats["cost"]
+        profit  = revenue - cost
+        margin  = (profit / revenue * 100) if revenue > 0 else 0.0
+        total_revenue += revenue; total_cost += cost
         per_product.append({
-            "product_id": pid,
-            "product_name": p.get("name", "Unknown"),
-            "revenue": round(revenue, 2),
-            "cost": round(cost, 2),
-            "profit": round(profit, 2),
-            "margin_pct": round(margin, 1),
+            "product_id": pid, "product_name": p.get("name", "Unknown"),
+            "revenue": round(revenue, 2), "cost": round(cost, 2),
+            "profit": round(profit, 2), "margin_pct": round(margin, 1),
             "qty_sold": stats["qty_sold"],
         })
-
     per_product.sort(key=lambda x: x["profit"], reverse=True)
     total_profit = total_revenue - total_cost
     total_margin = (total_profit / total_revenue * 100) if total_revenue > 0 else 0.0
-
-    # Count low-stock items
-    low_stock_count = sum(
-        1 for p in products_list if float(p.get("stock", 0)) <= float(p.get("reorder_threshold", 0))
-    )
-
+    low_stock_count = sum(1 for p in products_list if float(p.get("stock", 0)) <= float(p.get("reorder_threshold", 0)))
     return {
-        "total_revenue": round(total_revenue, 2),
-        "total_cost": round(total_cost, 2),
-        "total_profit": round(total_profit, 2),
-        "total_margin_pct": round(total_margin, 1),
-        "low_stock_count": low_stock_count,
-        "total_products": len(products_list),
+        "total_revenue": round(total_revenue, 2), "total_cost": round(total_cost, 2),
+        "total_profit": round(total_profit, 2), "total_margin_pct": round(total_margin, 1),
+        "low_stock_count": low_stock_count, "total_products": len(products_list),
         "per_product": per_product,
     }
 
 
-def get_reorder_suggestions() -> List[Dict[str, Any]]:
-    suppliers = {item["id"]: item for item in get_suppliers()}
-    suggestions = []
-    for product in get_products():
-        if float(product["stock"]) > float(product["reorder_threshold"]):
-            continue
-        lead_time = int(suppliers.get(product.get("supplier_id"), {}).get("lead_time_days") or 3)
-        stock = float(product["stock"])
-        threshold = float(product["reorder_threshold"])
-        daily_baseline = max(threshold / 7.0, 0.5)
-        lead_demand = daily_baseline * lead_time
-        suggested_qty = round((lead_demand + threshold) * 1.2, 1)
-        days_of_stock = stock / daily_baseline if daily_baseline > 0 else 0
-
-        if stock == 0:
-            urgency = "CRITICAL"
-        elif days_of_stock <= lead_time:
-            urgency = "HIGH"
-        else:
-            urgency = "MEDIUM"
-
-        supplier_name = suppliers.get(product.get("supplier_id"), {}).get("name") or "Default Supplier"
-        suggestions.append({
-            "product_id": product["id"],
-            "product_name": product["name"],
-            "warehouse_name": product.get("warehouse_name"),
-            "current_stock": round(stock, 2),
-            "threshold": threshold,
-            "supplier_name": supplier_name,
-            "lead_time_days": lead_time,
-            "days_of_stock_remaining": round(days_of_stock, 1),
-            "suggested_reorder_qty": suggested_qty,
-            "urgency": urgency,
-            "message": (
-                f"[{urgency}] {product['name']} at {product.get('warehouse_name')}: "
-                f"{stock} left, {lead_time}d lead time. Order {suggested_qty} units from {supplier_name}."
-            ),
-        })
-
-    suggestions.sort(key=lambda x: {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2}.get(x["urgency"], 3))
-    return suggestions
+# Backward-compat shim so existing code that calls without user_id still works
+def get_db_connection():
+    raise RuntimeError("SQLite has been removed. Use Firestore-backed helpers.")

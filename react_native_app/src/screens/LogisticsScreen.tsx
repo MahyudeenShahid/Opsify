@@ -131,8 +131,9 @@ const RiderMiniMap: React.FC<{ job: any }> = ({ job }) => {
   };
 
   const getMapUrl = () => {
-    const host = Platform.OS === 'web' ? `${window.location.hostname}:8000` : 'localhost:8000';
-    return `http://${host}/api/map/render?lat1=${origin.lat}&lng1=${origin.lng}&lat2=${dest.lat}&lng2=${dest.lng}`;
+    const w = typeof globalThis !== 'undefined' ? (globalThis as any).window : undefined;
+    const host = Platform.OS === 'web' ? (w ? w.location.hostname : 'localhost') : 'localhost';
+    return `http://${host}:8000/api/map/render?lat1=${origin.lat}&lng1=${origin.lng}&lat2=${dest.lat}&lng2=${dest.lng}`;
   };
 
   return (
@@ -425,7 +426,8 @@ export const LogisticsScreen: React.FC = () => {
   useEffect(() => {
     const fetchPetrol = async () => {
       try {
-        const host = Platform.OS === 'web' ? window.location.hostname : 'localhost';
+        const w = typeof globalThis !== 'undefined' ? (globalThis as any).window : undefined;
+        const host = Platform.OS === 'web' ? (w ? w.location.hostname : 'localhost') : 'localhost';
         const response = await fetch(`http://${host}:8000/api/petrol/price`);
         const data = await response.json();
         if (data.petrol_price) {

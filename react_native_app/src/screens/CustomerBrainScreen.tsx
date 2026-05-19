@@ -8,7 +8,7 @@ import { BlurView } from 'expo-blur';
 import {
   Activity, ScanLine, Play, CheckCircle, XCircle, Clock,
   MessageSquare, Package, Zap, ChevronDown, ChevronUp,
-  Send, Mic, MicOff, RefreshCw, History, AlertCircle
+  Send, Mic, MicOff, RefreshCw, History, AlertCircle, Trash2
 } from 'lucide-react-native';
 
 import { Theme } from '../core/theme';
@@ -219,10 +219,79 @@ export const CustomerBrainScreen: React.FC = () => {
   const [scanProgress, setScanProgress] = useState<any[]>([]);
   const [activeScanIdx, setActiveScanIdx] = useState(-1);
   const [detectedOrders, setDetectedOrders] = useState<DetectedOrder[]>([]);
+  const [persistedOrders, setPersistedOrders] = useState<DetectedOrder[]>([]); // from Firestore
   const [scanMeta, setScanMeta] = useState<ScanMeta | null>(null);
   const [sessions, setSessions] = useState<ScanSession[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [showTrackedChats, setShowTrackedChats] = useState(false);
   const [scanState, setScanState] = useState<any>(null);
+  const [isLoadingPersisted, setIsLoadingPersisted] = useState(false);
+
+  const handleDeleteSession = async (sessionId: string) => {
+    try {
+      await ApiService.deleteScanSession(sessionId);
+      setSessions(prev => prev.filter(s => s.session_id !== sessionId));
+      loadScanState();
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    }
+  };
+
+  const handleClearHistory = async () => {
+    Alert.alert(
+      'Clear History',
+      'Are you sure you want to clear all scan session history?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear All',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await ApiService.clearAllScanSessions();
+              setSessions([]);
+              loadScanState();
+            } catch (e: any) {
+              Alert.alert('Error', e.message);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleDeleteCursor = async (chatId: string) => {
+    try {
+      await ApiService.deleteScanCursor(chatId);
+      loadScanState();
+      Alert.alert('Cursor Reset', 'Cursor deleted. This chat will be fully scanned next time.');
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    }
+  };
+
+  const handleResetAllCursors = async () => {
+    Alert.alert(
+      'Reset All Cursors',
+      'This will reset the scan status for all chats, causing the next run to perform a full scan on all of them. Proceed?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset All',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await ApiService.clearAllScanCursors();
+              loadScanState();
+              Alert.alert('Success', 'All cursors reset successfully.');
+            } catch (e: any) {
+              Alert.alert('Error', e.message);
+            }
+          }
+        }
+      ]
+    );
+  };
 
   // Manual override
   const [message, setMessage] = useState('');
@@ -245,6 +314,7 @@ export const CustomerBrainScreen: React.FC = () => {
       ])
     ).start();
     loadScanState();
+    loadPersistedOrders();
   }, []);
 
   const loadScanState = async () => {
@@ -254,6 +324,18 @@ export const CustomerBrainScreen: React.FC = () => {
       setSessions(state.sessions || []);
     } catch (e) {
       // Backend may not be running yet
+    }
+  };
+
+  const loadPersistedOrders = async () => {
+    setIsLoadingPersisted(true);
+    try {
+      const pending = await ApiService.getPendingOrders();
+      setPersistedOrders(pending);
+    } catch (e) {
+      // Silently ignore if backend not available
+    } finally {
+      setIsLoadingPersisted(false);
     }
   };
 
@@ -306,7 +388,14 @@ export const CustomerBrainScreen: React.FC = () => {
       setScanProgress(result.scan_metadata?.per_chat || []);
       setActiveScanIdx(-1);
 
-      setDetectedOrders(result.detected_orders || []);
+      const newOrders: DetectedOrder[] = result.detected_orders || [];
+      // Merge new orders with persisted, deduplicating by chat_id+item+quantity
+      const allFingerprints = new Set(newOrders.map(o => `${o.chat_id}|${o.item}|${o.quantity}`));
+      const stillPending = persistedOrders.filter(
+        o => !allFingerprints.has(`${o.chat_id}|${o.item}|${o.quantity}`)
+      );
+      setDetectedOrders(newOrders);
+      setPersistedOrders(stillPending);
       setScanMeta(result.scan_metadata);
       setTraceLogs(prev => [
         ...prev,
@@ -337,11 +426,19 @@ export const CustomerBrainScreen: React.FC = () => {
       await ApiService.recordTransaction(txType, {
         product_id: productId,
         warehouse_id: order.warehouse_id || 1,
-        quantity: order.quantity,
-        value: order.value,
+        quantity: order.quantity || 1,
+        value: order.value || 0,
       });
 
-      setDetectedOrders(prev => prev.filter(o => !(o.chat_id === order.chat_id && o.item === order.item && o.quantity === order.quantity)));
+      // Remove from both local state lists
+      const match = (o: DetectedOrder) => o.chat_id === order.chat_id && o.item === order.item && o.quantity === order.quantity;
+      setDetectedOrders(prev => prev.filter(o => !match(o)));
+      setPersistedOrders(prev => prev.filter(o => !match(o)));
+
+      // Remove from Firestore
+      const fp = (order as any).fingerprint;
+      if (fp) await ApiService.deletePendingOrder(fp);
+
       setTraceLogs(prev => [...prev, `[System1] ✅ Booked: ${order.quantity} × ${order.item} (${order.type}) from ${order.contact_name}`]);
       Alert.alert('✅ Order Booked', `${order.quantity} units of ${order.item} logged to the ERP ledger.`);
     } catch (e: any) {
@@ -358,7 +455,16 @@ export const CustomerBrainScreen: React.FC = () => {
         quantity: order.quantity,
         type: order.type,
       });
-      setDetectedOrders(prev => prev.filter(o => !(o.chat_id === order.chat_id && o.item === order.item && o.quantity === order.quantity)));
+
+      // Remove from both local state lists
+      const match = (o: DetectedOrder) => o.chat_id === order.chat_id && o.item === order.item && o.quantity === order.quantity;
+      setDetectedOrders(prev => prev.filter(o => !match(o)));
+      setPersistedOrders(prev => prev.filter(o => !match(o)));
+
+      // Remove from Firestore
+      const fp = (order as any).fingerprint;
+      if (fp) await ApiService.deletePendingOrder(fp);
+
       setTraceLogs(prev => [...prev, `[System1] ❌ Rejected: ${order.item} from ${order.contact_name}`]);
     } catch (e: any) {
       Alert.alert('Error', e.message);
@@ -459,10 +565,67 @@ export const CustomerBrainScreen: React.FC = () => {
                   : 'Never'}
               </Text>
             </View>
-            <TouchableOpacity onPress={() => setShowHistory(!showHistory)} style={styles.historyBtn}>
-              <History size={14} color={Theme.colors.textMuted} />
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowTrackedChats(!showTrackedChats);
+                  if (!showTrackedChats) setShowHistory(false);
+                }}
+                style={[styles.historyBtn, showTrackedChats && { borderColor: Theme.colors.primary, backgroundColor: 'rgba(0,230,118,0.08)' }]}
+              >
+                <ScanLine size={14} color={showTrackedChats ? Theme.colors.primary : Theme.colors.textMuted} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowHistory(!showHistory);
+                  if (!showHistory) setShowTrackedChats(false);
+                }}
+                style={[styles.historyBtn, showHistory && { borderColor: Theme.colors.primary, backgroundColor: 'rgba(0,230,118,0.08)' }]}
+              >
+                <History size={14} color={showHistory ? Theme.colors.primary : Theme.colors.textMuted} />
+              </TouchableOpacity>
+            </View>
           </View>
+        </View>
+      )}
+
+      {/* ── Tracked Chats (Cursors) ──────────────────────────────────────────── */}
+      {showTrackedChats && scanState?.cursors && (
+        <View style={styles.historyCard}>
+          <LinearGradient colors={['rgba(17,22,34,0.95)', 'rgba(7,10,14,0.95)']} style={StyleSheet.absoluteFill} />
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Theme.spacing.sm }}>
+            <Text style={styles.historyTitle}>Tracked Chat Cursors</Text>
+            {Object.keys(scanState.cursors).length > 0 && (
+              <TouchableOpacity onPress={handleResetAllCursors}>
+                <Text style={{ color: Theme.colors.error, fontSize: 11, fontWeight: '700' }}>Reset All</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          {Object.keys(scanState.cursors).length === 0 ? (
+            <Text style={{ color: Theme.colors.textMuted, fontSize: 12, fontStyle: 'italic', textAlign: 'center', paddingVertical: 8 }}>
+              No chats currently tracked. Run a scan to build cursors.
+            </Text>
+          ) : (
+            Object.entries(scanState.cursors).map(([chatId, cursor]: [string, any]) => (
+              <View key={chatId} style={styles.historyRow}>
+                <View style={[styles.historyDot, { backgroundColor: Theme.colors.primary }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.historyTime}>{cursor.contact_name || chatId}</Text>
+                  <Text style={styles.historyMeta}>
+                    Last Msg: {cursor.last_scanned_message_id?.slice(0, 8) || 'None'} · Scanned: {cursor.messages_scanned || 0} msgs
+                  </Text>
+                  {cursor.updated_at && (
+                    <Text style={{ color: Theme.colors.textMuted, fontSize: 9, marginTop: 2 }}>
+                      Last Scanned: {new Date(cursor.updated_at).toLocaleString()}
+                    </Text>
+                  )}
+                </View>
+                <TouchableOpacity onPress={() => handleDeleteCursor(chatId)} style={{ padding: 4 }}>
+                  <Trash2 size={14} color={Theme.colors.error} />
+                </TouchableOpacity>
+              </View>
+            ))
+          )}
         </View>
       )}
 
@@ -470,7 +633,12 @@ export const CustomerBrainScreen: React.FC = () => {
       {showHistory && sessions.length > 0 && (
         <View style={styles.historyCard}>
           <LinearGradient colors={['rgba(17,22,34,0.95)', 'rgba(7,10,14,0.95)']} style={StyleSheet.absoluteFill} />
-          <Text style={styles.historyTitle}>Scan History</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Theme.spacing.sm }}>
+            <Text style={styles.historyTitle}>Scan History</Text>
+            <TouchableOpacity onPress={handleClearHistory}>
+              <Text style={{ color: Theme.colors.error, fontSize: 11, fontWeight: '700' }}>Clear All</Text>
+            </TouchableOpacity>
+          </View>
           {sessions.map((s, i) => (
             <View key={s.session_id || i} style={styles.historyRow}>
               <View style={styles.historyDot} />
@@ -480,6 +648,11 @@ export const CustomerBrainScreen: React.FC = () => {
                   {s.total_chats} chats · {s.new_messages_scanned} msgs · {s.orders_detected} orders found
                 </Text>
               </View>
+              {s.session_id && (
+                <TouchableOpacity onPress={() => handleDeleteSession(s.session_id!)} style={{ padding: 4 }}>
+                  <Trash2 size={14} color={Theme.colors.error} />
+                </TouchableOpacity>
+              )}
             </View>
           ))}
         </View>
@@ -528,13 +701,48 @@ export const CustomerBrainScreen: React.FC = () => {
         </View>
       )}
 
-      {/* ── Detected Orders ──────────────────────────────────────────────────── */}
+      {/* ── Persisted (Last Scan) Pending Orders ─────────────────────────────── */}
+      {isLoadingPersisted && (
+        <View style={styles.loadingPersistedRow}>
+          <ActivityIndicator size="small" color={Theme.colors.primary} />
+          <Text style={styles.loadingPersistedText}>Loading pending orders from last scan...</Text>
+        </View>
+      )}
+
+      {!isLoadingPersisted && persistedOrders.length > 0 && (
+        <View style={styles.ordersSection}>
+          <View style={styles.ordersSectionHeader}>
+            <Clock size={18} color="#00B0FF" />
+            <Text style={[styles.ordersSectionTitle, { color: '#00B0FF' }]}>
+              {persistedOrders.length} Pending from Last Scan
+            </Text>
+          </View>
+          <View style={styles.lastScanBanner}>
+            <LinearGradient colors={['rgba(0,176,255,0.1)', 'rgba(0,176,255,0.04)']} style={StyleSheet.absoluteFill} />
+            <Text style={styles.lastScanBannerText}>
+              🕐 These orders were detected in your previous scan and haven't been actioned yet.
+              They will remain here until you Approve or Reject them.
+            </Text>
+          </View>
+          {persistedOrders.map((order, i) => (
+            <OrderCard
+              key={`persisted-${order.chat_id}-${order.item}-${i}`}
+              order={{...order, _fromLastScan: true} as any}
+              index={i}
+              onApprove={() => handleApprove(order)}
+              onReject={() => handleReject(order)}
+            />
+          ))}
+        </View>
+      )}
+
+      {/* ── Detected Orders (Current Scan) ───────────────────────────────────── */}
       {detectedOrders.length > 0 && (
         <View style={styles.ordersSection}>
           <View style={styles.ordersSectionHeader}>
             <AlertCircle size={18} color={Theme.colors.warning} />
             <Text style={styles.ordersSectionTitle}>
-              {detectedOrders.length} Pending Order{detectedOrders.length !== 1 ? 's' : ''} Detected
+              {detectedOrders.length} New Order{detectedOrders.length !== 1 ? 's' : ''} Detected
             </Text>
           </View>
           {detectedOrders.map((order, i) => (
@@ -549,7 +757,7 @@ export const CustomerBrainScreen: React.FC = () => {
         </View>
       )}
 
-      {!isScanning && detectedOrders.length === 0 && scanMeta && (
+      {!isScanning && !isLoadingPersisted && detectedOrders.length === 0 && persistedOrders.length === 0 && scanMeta && (
         <View style={styles.allClearCard}>
           <LinearGradient colors={['rgba(0,230,118,0.06)', 'transparent']} style={StyleSheet.absoluteFill} />
           <Text style={styles.allClearEmoji}>✅</Text>
@@ -705,4 +913,10 @@ const styles = StyleSheet.create({
   terminalDot: { width: 10, height: 10, borderRadius: 5 },
   terminalBarText: { color: Theme.colors.textMuted, fontSize: 9, fontWeight: '800', letterSpacing: 1.5 },
   logLine: { color: '#6EE78A', fontSize: 12, fontFamily: 'monospace', paddingHorizontal: 14, paddingVertical: 2, lineHeight: 20 },
+
+  // Persisted orders
+  loadingPersistedRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: Theme.spacing.md },
+  loadingPersistedText: { color: Theme.colors.textMuted, fontSize: 13 },
+  lastScanBanner: { borderRadius: Theme.borderRadius.md, borderWidth: 1, borderColor: 'rgba(0,176,255,0.2)', padding: Theme.spacing.md, marginBottom: Theme.spacing.md, overflow: 'hidden' },
+  lastScanBannerText: { color: '#00B0FF', fontSize: 12, lineHeight: 18 },
 });

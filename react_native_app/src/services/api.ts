@@ -1,24 +1,21 @@
 import { Platform } from 'react-native';
+import { auth } from '../config/firebaseConfig';
 
 const getBaseUrl = () => {
-  // If using a physical phone with Expo Go, set your computer's local IP here.
-  if (Platform.OS === 'web') {
-    return 'http://localhost:8000/api';
-  } else if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:8000/api'; // Loopback to host from Android Emulator
-  } else {
-    return 'http://localhost:8000/api'; // iOS Simulator loopback
-  }
+  if (Platform.OS === 'web') return 'http://localhost:8000/api';
+  if (Platform.OS === 'android') return 'http://10.0.2.2:8000/api';
+  return 'http://localhost:8000/api';
 };
 
 const BASE_URL = getBaseUrl();
 
-// Reads EXPO_PUBLIC_OPSIFY_API_KEY or OPSIFY_API_KEY from environment.
 const API_KEY = (typeof process !== 'undefined' && (process.env?.EXPO_PUBLIC_OPSIFY_API_KEY || process.env?.OPSIFY_API_KEY)) || '';
 
 const authHeaders = (): Record<string, string> => {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (API_KEY) headers['X-API-Key'] = API_KEY;
+  const uid = auth.currentUser?.uid;
+  if (uid) headers['X-User-ID'] = uid;
   return headers;
 };
 
@@ -44,6 +41,44 @@ export const ApiService = {
   async getWarehouses(): Promise<any[]> {
     const response = await fetch(`${BASE_URL}/warehouses`, { headers: authHeaders() });
     if (!response.ok) throw new Error('Failed to fetch warehouses');
+    return response.json();
+  },
+
+  async addWarehouse(data: any): Promise<any> {
+    const response = await fetch(`${BASE_URL}/warehouses/add`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.detail || 'Failed to add warehouse');
+    }
+    return response.json();
+  },
+
+  async updateWarehouse(id: number | string, data: any): Promise<any> {
+    const response = await fetch(`${BASE_URL}/warehouses/${id}`, {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.detail || 'Failed to update warehouse');
+    }
+    return response.json();
+  },
+
+  async deleteWarehouse(id: number | string): Promise<any> {
+    const response = await fetch(`${BASE_URL}/warehouses/${id}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.detail || 'Failed to delete warehouse');
+    }
     return response.json();
   },
 
@@ -162,6 +197,58 @@ export const ApiService = {
       body: JSON.stringify(order),
     });
     if (!response.ok) throw new Error('Failed to reject order');
+    return response.json();
+  },
+
+  async getPendingOrders(): Promise<any[]> {
+    const response = await fetch(`${BASE_URL}/agents/pending-orders`, { headers: authHeaders() });
+    if (!response.ok) throw new Error('Failed to get pending orders');
+    const data = await response.json();
+    return data.pending_orders || [];
+  },
+
+  async deletePendingOrder(fingerprint: string): Promise<any> {
+    const response = await fetch(`${BASE_URL}/agents/pending-orders/${fingerprint}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to delete pending order');
+    return response.json();
+  },
+
+  async deleteScanSession(sessionId: string): Promise<any> {
+    const response = await fetch(`${BASE_URL}/agents/scan-sessions/${sessionId}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to delete scan session');
+    return response.json();
+  },
+
+  async clearAllScanSessions(): Promise<any> {
+    const response = await fetch(`${BASE_URL}/agents/scan-sessions`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to clear scan history');
+    return response.json();
+  },
+
+  async deleteScanCursor(chatId: string): Promise<any> {
+    const response = await fetch(`${BASE_URL}/agents/scan-cursors/${chatId}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to delete scan cursor');
+    return response.json();
+  },
+
+  async clearAllScanCursors(): Promise<any> {
+    const response = await fetch(`${BASE_URL}/agents/scan-cursors`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to clear all scan cursors');
     return response.json();
   },
 
@@ -414,5 +501,48 @@ export const ApiService = {
     if (!response.ok) throw new Error('Failed to fetch profit summary');
     return response.json();
   },
+
+  // ─── Activity Log ─────────────────────────────────────────────────────────
+  async getActivityLog(limit = 100): Promise<any[]> {
+    const response = await fetch(`${BASE_URL}/activity-log?limit=${limit}`, { headers: authHeaders() });
+    if (!response.ok) throw new Error('Failed to fetch activity log');
+    return response.json();
+  },
+
+  // ─── Onboarding ───────────────────────────────────────────────────────────
+  async getOnboardingStatus(): Promise<{ onboarded: boolean }> {
+    const response = await fetch(`${BASE_URL}/onboarding/status`, { headers: authHeaders() });
+    if (!response.ok) throw new Error('Failed to get onboarding status');
+    return response.json();
+  },
+
+  async seedUserData(): Promise<any> {
+    const response = await fetch(`${BASE_URL}/onboarding/seed`, { method: 'POST', headers: authHeaders() });
+    if (!response.ok) throw new Error('Failed to seed data');
+    return response.json();
+  },
+
+  async initEmptyUser(): Promise<any> {
+    const response = await fetch(`${BASE_URL}/onboarding/init`, { method: 'POST', headers: authHeaders() });
+    if (!response.ok) throw new Error('Failed to init workspace');
+    return response.json();
+  },
+
+  // ─── Dispatch ─────────────────────────────────────────────────────────────
+  async dispatchOrder(orderId: number, courierName: string, courierPhone: string): Promise<any> {
+    const response = await fetch(`${BASE_URL}/orders/${orderId}/dispatch`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ courier_name: courierName, courier_phone: courierPhone }),
+    });
+    if (!response.ok) throw new Error('Failed to dispatch order');
+    return response.json();
+  },
+
 };
+
+
+
+
+
 

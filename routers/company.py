@@ -1,45 +1,63 @@
+"""
+ERP API Router — Per-user Firestore backend.
+Every endpoint extracts user_id from the X-User-ID header so that all
+data operations are scoped to the authenticated user.
+"""
 import io
 import csv
 import random
-from typing import Optional, List, Any
+import uuid
+from typing import Optional, List
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, HTTPException, Header
 
 from broker.event_broker import broker
 from company_brain.firestore_inventory import (
-    get_suppliers,
-    add_supplier,
-    update_supplier,
-    delete_supplier,
-    delete_all_suppliers,
-    add_product,
-    update_product,
-    delete_product,
-    get_products,
-    record_sale,
-    record_restock,
-    record_adjustment,
-    get_transactions,
-    get_demand_predictions,
-    get_reorder_suggestions,
-    get_warehouses,
-    get_orders,
-    add_order,
-    update_order_status,
-    delete_order,
-    get_profit_summary,
+    # Warehouses
+    get_warehouses, add_warehouse, update_warehouse, delete_warehouse,
+    # Suppliers
+    get_suppliers, add_supplier, update_supplier, delete_supplier, delete_all_suppliers,
+    # Products
+    add_product, update_product, delete_product, get_products, get_product_by_id,
+    search_products_by_name_fragment,
+    # Transactions
+    record_sale, record_restock, record_adjustment, get_transactions,
+    # Analytics
+    get_demand_predictions, get_reorder_suggestions, get_profit_summary,
+    # Orders
+    get_orders, add_order, update_order_status, delete_order, dispatch_order,
+    # Onboarding
+    seed_user_data, init_empty_user, user_is_onboarded,
+    # Activity
+    get_activity_log,
+    DEFAULT_USER_ID,
 )
 
 router = APIRouter()
 
+
+# ── User-ID extraction helper ─────────────────────────────────────────────────
+
+def _uid(x_user_id: Optional[str]) -> str:
+    """Return the caller's user_id, falling back to the legacy shared namespace."""
+    return x_user_id.strip() if x_user_id and x_user_id.strip() else DEFAULT_USER_ID
+
+
 # ── Schemas ──────────────────────────────────────────────────────────────────
+
 class SupplierRequest(BaseModel):
     name: str
     contact: str
     rating: float
     reliability_score: float
     lead_time_days: int
+
+class UpdateSupplierRequest(BaseModel):
+    name: Optional[str] = None
+    contact: Optional[str] = None
+    rating: Optional[float] = None
+    reliability_score: Optional[float] = None
+    lead_time_days: Optional[int] = None
 
 class ProductRequest(BaseModel):
     sku: str
@@ -67,13 +85,6 @@ class UpdateProductRequest(BaseModel):
     stock: Optional[float] = None
     warehouse_id: Optional[int] = 1
 
-class UpdateSupplierRequest(BaseModel):
-    name: Optional[str] = None
-    contact: Optional[str] = None
-    rating: Optional[float] = None
-    reliability_score: Optional[float] = None
-    lead_time_days: Optional[int] = None
-
 class OrderRequest(BaseModel):
     order_ref: Optional[str] = None
     customer_name: str
@@ -84,7 +95,19 @@ class OrderRequest(BaseModel):
     total_value: Optional[float] = None
 
 class OrderStatusRequest(BaseModel):
-    status: str  # PENDING | FULFILLED | CANCELLED
+    status: str
+
+class WarehouseRequest(BaseModel):
+    name: str
+    location: str
+
+class UpdateWarehouseRequest(BaseModel):
+    name: Optional[str] = None
+    location: Optional[str] = None
+
+class DispatchRequest(BaseModel):
+    courier_name: str
+    courier_phone: str
 
 class TransactionRequest(BaseModel):
     product_id: int
@@ -118,364 +141,111 @@ class ChatRequest(BaseModel):
     user_id: Optional[str] = None
 
 
+# ── Warehouses ────────────────────────────────────────────────────────────────
 
-# ── Endpoints ────────────────────────────────────────────────────────────────
 @router.get("/api/warehouses")
-def api_get_warehouses():
-    return get_warehouses()
+def api_get_warehouses(x_user_id: Optional[str] = Header(None)):
+    return get_warehouses(_uid(x_user_id))
 
+
+@router.post("/api/warehouses/add")
+def api_add_warehouse(req: WarehouseRequest, x_user_id: Optional[str] = Header(None)):
+    res = add_warehouse(req.name, req.location, _uid(x_user_id))
+    if res["status"] == "error":
+        raise HTTPException(status_code=400, detail=res["message"])
+    return res
+
+
+@router.put("/api/warehouses/{warehouse_id}")
+def api_update_warehouse(warehouse_id: str, req: UpdateWarehouseRequest,
+                         x_user_id: Optional[str] = Header(None)):
+    res = update_warehouse(warehouse_id, req.name, req.location, _uid(x_user_id))
+    if res["status"] == "error":
+        raise HTTPException(status_code=400, detail=res["message"])
+    return res
+
+
+@router.delete("/api/warehouses/{warehouse_id}")
+def api_delete_warehouse(warehouse_id: str, x_user_id: Optional[str] = Header(None)):
+    res = delete_warehouse(warehouse_id, _uid(x_user_id))
+    if res["status"] == "error":
+        raise HTTPException(status_code=400, detail=res["message"])
+    return res
+
+
+# ── Suppliers ─────────────────────────────────────────────────────────────────
 
 @router.get("/api/suppliers")
-def api_get_suppliers():
-    return get_suppliers()
+def api_get_suppliers(x_user_id: Optional[str] = Header(None)):
+    return get_suppliers(_uid(x_user_id))
 
 
 @router.post("/api/suppliers/add")
-def api_add_supplier(req: SupplierRequest):
-    res = add_supplier(req.name, req.contact, req.rating, req.reliability_score, req.lead_time_days)
+def api_add_supplier(req: SupplierRequest, x_user_id: Optional[str] = Header(None)):
+    res = add_supplier(req.name, req.contact, req.rating, req.reliability_score,
+                       req.lead_time_days, _uid(x_user_id))
     if res["status"] == "error":
         raise HTTPException(status_code=400, detail=res["message"])
     return res
 
 
-@router.get("/api/vendors/search")
-def api_search_vendors(query: str, location: str = "Karachi"):
-    # Dual-Mode Google Places TextSearch simulation / API call
-    import os
-    api_key = os.environ.get("GOOGLE_MAPS_API_KEY")
-    if api_key:
-        try:
-            import requests
-            url = f"https://maps.googleapis.com/maps/api/place/textsearch/json?query={query}+wholesale+{location}&key={api_key}"
-            res = requests.get(url).json()
-            status = res.get("status")
-            
-            if status == "OK":
-                results = res.get("results", [])[:5]
-                vendors = []
-                for i, p in enumerate(results):
-                    rating = p.get("rating", round(random.uniform(4.0, 4.9), 1))
-                    price_val = round(random.uniform(50.0, 500.0), 1)
-                    distance_val = round(random.uniform(0.5, 6.0), 1)
-                    
-                    vendors.append({
-                        "id": f"map-{i}",
-                        "name": p.get("name"),
-                        "address": p.get("formatted_address"),
-                        "rating": rating,
-                        "distance": f"{distance_val} km",
-                        "price": f"Rs {price_val}",
-                        "contact": p.get("formatted_phone_number", f"+92-300-{random.randint(1000000, 9999999)}"),
-                        "reliability_score": round(90.0 - distance_val * 2 + rating * 2, 1)
-                    })
-                return {"status": "success", "vendors": vendors}
-            else:
-                print(f"[Supplier API] Google Places API returned non-OK status: {status}")
-                if "error_message" in res:
-                    print(f"[Supplier API] Error Details: {res['error_message']}")
-        except Exception as e:
-            print(f"[Supplier API] Live API request failed with exception: {e}")
-            
-    # Try 100% Free OpenStreetMap Nominatim API fallback before mocking
-    osm_vendors = []
-    try:
-        import requests
-        headers = {"User-Agent": "OpsifyERP/1.0"}
-        search_q = f"{query} {location}"
-        url = f"https://nominatim.openstreetmap.org/search?q={search_q}&format=json&limit=5"
-        res = requests.get(url, headers=headers, timeout=8).json()
-        
-        if not res:
-            url = f"https://nominatim.openstreetmap.org/search?q={query}+Karachi&format=json&limit=5"
-            res = requests.get(url, headers=headers, timeout=8).json()
-            
-        for i, item in enumerate(res):
-            rating = round(random.uniform(4.0, 4.9), 1)
-            price_val = round(random.uniform(50.0, 500.0), 1)
-            distance_val = round(random.uniform(0.5, 6.0), 1)
-            
-            display_name = item.get("display_name", f"{query.title()} Wholesaler")
-            parts = [p.strip() for p in display_name.split(",")]
-            name = parts[0]
-            if len(parts) > 1 and len(name) < 10:
-                name = f"{name} ({parts[1]})"
-                
-            osm_vendors.append({
-                "id": f"osm-{i}",
-                "name": name,
-                "address": display_name[:120] + ("..." if len(display_name) > 120 else ""),
-                "rating": rating,
-                "distance": f"{distance_val} km",
-                "price": f"Rs {price_val}",
-                "contact": f"+92-300-{random.randint(1000000, 9999999)}",
-                "reliability_score": round(90.0 - distance_val * 2 + rating * 2, 1)
-            })
-    except Exception as e:
-        print(f"[Supplier API] OSM Nominatim search failed: {e}")
-        
-    if osm_vendors:
-        return {"status": "success", "vendors": osm_vendors}
-            
-    # Mock data generator for DHA/Clifton/Gulshan
-    keywords = query.lower()
-    product_type = "Distributor"
-    if "milk" in keywords or "dairy" in keywords:
-        category = "Dairy"
-        item = "Milk"
-        unit = "liter"
-        prefixes = ["Sindh Farms Milk", "National Dairy", "Pak-Arab Wholesalers", "Karachi Fresh Milk", "Premium Farms Wholesalers"]
-        price_base = 100.0
-    elif "wire" in keywords or "metal" in keywords or "copper" in keywords:
-        category = "Hardware"
-        item = "Wire"
-        unit = "meter"
-        prefixes = ["Pakistan Cables Bulk", "Gulshan Electric Wholesalers", "DHA Copper Mills", "Karachi Hardware Traders", "Indus Metal Hub"]
-        price_base = 30.0
-    elif "pipe" in keywords or "pvc" in keywords:
-        category = "Hardware"
-        item = "Pipe"
-        unit = "piece"
-        prefixes = ["Indus PVC Pipes", "Karachi Plumbing Wholesalers", "Standard Fitting Co.", "Clifton Hardware Hub", "Super Pipe Wholesalers"]
-        price_base = 80.0
-    elif "bread" in keywords or "bakery" in keywords:
-        category = "Bakery"
-        item = "Bread"
-        unit = "loaf"
-        prefixes = ["BakeHouse Wholesalers", "National Bread Co.", "Standard Grain Bakery", "Premium Flour Wholesalers", "Karachi Loaf Distributors"]
-        price_base = 40.0
-    else:
-        category = "General"
-        item = "Goods"
-        unit = "unit"
-        prefixes = [f"Karachi {query.title()} Traders", f"{location} {query.title()} Co.", f"Sindh Wholesale {query.title()}", f"Prime {query.title()} Wholesalers", f"Apex {query.title()} Distributors"]
-        price_base = 150.0
+@router.put("/api/suppliers/{supplier_id}")
+def api_update_supplier(supplier_id: str, req: UpdateSupplierRequest,
+                        x_user_id: Optional[str] = Header(None)):
+    res = update_supplier(supplier_id, _uid(x_user_id),
+                          name=req.name, contact=req.contact, rating=req.rating,
+                          reliability_score=req.reliability_score,
+                          lead_time_days=req.lead_time_days)
+    if res["status"] == "error":
+        raise HTTPException(status_code=400, detail=res["message"])
+    return res
 
-    vendors = []
-    # Seed randomized locations and prices for exactly 5 vendors
-    random.seed(len(keywords) + len(location)) # Stable seed for query
-    for i, prefix in enumerate(prefixes[:5]):
-        rating = round(random.uniform(4.0, 5.0), 1)
-        price_val = round(price_base * random.uniform(0.85, 1.15), 1)
-        distance_val = round(random.uniform(0.5, 5.0), 1)
-        
-        vendors.append({
-            "id": f"map-{i}",
-            "name": prefix,
-            "address": f"Plot {random.randint(10, 250)}, Block {random.randint(1, 9)}, {location}, Karachi",
-            "rating": rating,
-            "distance": f"{distance_val} km",
-            "price": f"Rs {price_val}/{unit}",
-            "contact": f"+92-321-{random.randint(1000000, 9999999)}",
-            "reliability_score": round(100.0 - (distance_val * 3) - (i * 2), 1)
-        })
 
-    return {"status": "success", "vendors": vendors}
+@router.delete("/api/suppliers/all")
+def api_delete_all_suppliers(x_user_id: Optional[str] = Header(None)):
+    return delete_all_suppliers(_uid(x_user_id))
 
+
+@router.delete("/api/suppliers/{supplier_id}")
+def api_delete_supplier(supplier_id: str, x_user_id: Optional[str] = Header(None)):
+    res = delete_supplier(supplier_id, _uid(x_user_id))
+    if res["status"] == "error":
+        raise HTTPException(status_code=404, detail=res["message"])
+    return res
+
+
+# ── Products ──────────────────────────────────────────────────────────────────
 
 @router.get("/api/products")
-def api_get_products():
-    return get_products()
+def api_get_products(x_user_id: Optional[str] = Header(None)):
+    return get_products(_uid(x_user_id))
 
 
 @router.post("/api/products/add")
-def api_add_product(req: ProductRequest):
+def api_add_product(req: ProductRequest, x_user_id: Optional[str] = Header(None)):
     qty = req.initial_stock if req.initial_stock is not None else (req.stock if req.stock is not None else 0.0)
     res = add_product(
-        sku=req.sku,
-        name=req.name,
-        category=req.category or "",
-        variant=req.variant or "",
-        unit=req.unit or "units",
-        cost_price=req.cost_price,
-        selling_price=req.selling_price,
-        supplier_id=req.supplier_id,
-        warehouse_id=req.warehouse_id or 1,
-        initial_stock=qty,
-        reorder_threshold=req.reorder_threshold or 0.0
+        sku=req.sku, name=req.name, category=req.category or "",
+        variant=req.variant or "", unit=req.unit or "units",
+        cost_price=req.cost_price, selling_price=req.selling_price,
+        supplier_id=req.supplier_id, warehouse_id=req.warehouse_id or 1,
+        initial_stock=qty, reorder_threshold=req.reorder_threshold or 0.0,
+        user_id=_uid(x_user_id),
     )
     if res["status"] == "error":
         raise HTTPException(status_code=400, detail=res["message"])
     return res
 
-
-@router.post("/api/transactions/sale")
-def api_record_sale(req: TransactionRequest):
-    res = record_sale(req.product_id, req.warehouse_id, req.quantity, req.value)
-    if res["status"] == "error":
-        raise HTTPException(status_code=400, detail=res["message"])
-    return res
-
-
-@router.post("/api/procurement/suggest")
-def api_procurement_suggest(req: ProcurementSuggestRequest):
-    from agents.bidding_agent import generate_procurement_suggestions
-    suggestions = generate_procurement_suggestions(req.product_name, req.lat, req.lng)
-    return {"suggestions": suggestions}
-
-
-@router.post("/api/chat")
-async def api_chat(req: ChatRequest):
-    from agents.chat_agent import run_chat
-    from company_brain.ops_chat import save_chat_conversation, append_chat_messages
-    # Normalize incoming messages
-    msgs = [{"role": m.role, "content": m.content, "timestamp": None} for m in req.messages]
-
-    # Attempt to capture a user identifier from headers (optional)
-    # If the client provides X-User-Id header, include it in the saved conversation.
-    # Otherwise we'll persist the conversation without a user_id.
-    # Prefer explicit user_id in request payload
-    user_id = req.user_id if getattr(req, 'user_id', None) else None
-
-    # Persist the incoming user messages as a new conversation document
-    chat_doc_id = None
-    try:
-        chat_doc_id = save_chat_conversation(msgs, user_id=user_id, session_id=None)
-    except Exception as e:
-        # Log but continue; chat should still work even if saving fails
-        print(f"[OpsChat] Failed to save incoming conversation: {e}")
-
-    # Run the chat agent
-    result = run_chat(msgs)
-
-    # Persist the assistant response to the same conversation doc if available
-    try:
-        assistant_text = result.get("text") if isinstance(result, dict) else None
-        if assistant_text and chat_doc_id:
-            append_chat_messages(chat_doc_id, [{"role": "assistant", "content": assistant_text, "timestamp": None}])
-    except Exception as e:
-        print(f"[OpsChat] Failed to append assistant message: {e}")
-
-    return result
-
-
-@router.post("/api/procurement/approve")
-async def api_procurement_approve(req: ProcurementApproveRequest):
-    vendor = req.vendor
-    name = vendor.get("name", "Unknown Supplier")
-    
-    # Check if supplier exists, else add them
-    sups = get_suppliers()
-    sup_id = None
-    for s in sups:
-        if s["name"] == name:
-            sup_id = s["id"]
-            break
-            
-    if not sup_id:
-        res = add_supplier(
-            name=name,
-            contact=vendor.get("contact", ""),
-            rating=vendor.get("rating", 4.0),
-            reliability_score=vendor.get("reliability_score", 80.0),
-            lead_time_days=vendor.get("lead_time_days", 1)
-        )
-        if res["status"] == "error":
-            raise HTTPException(status_code=400, detail=res["message"])
-        sup_id = res.get("supplier_id", 1)
-        
-    # Parse price
-    price_str = str(vendor.get("price", "0"))
-    try:
-        price_val = float(''.join(c for c in price_str if c.isdigit() or c == '.'))
-    except ValueError:
-        price_val = 100.0
-        
-    total_value = price_val * req.quantity
-    
-    res = record_restock(req.product_id, req.warehouse_id, req.quantity, total_value)
-    if res["status"] == "error":
-        raise HTTPException(status_code=400, detail=res["message"])
-        
-    await broker.publish("SYSTEM_LOG", "ProcurementEngine", {
-        "message": f"Manual Procurement Approved: Restocked {req.quantity} units from {name} for Rs {total_value}."
-    })
-    
-    return {"status": "success", "message": "Procurement approved and stock updated."}
-
-
-@router.post("/api/transactions/restock")
-def api_record_restock(req: TransactionRequest):
-    res = record_restock(req.product_id, req.warehouse_id, req.quantity, req.value)
-    if res["status"] == "error":
-        raise HTTPException(status_code=400, detail=res["message"])
-    return res
-
-
-@router.post("/api/transactions/adjustment")
-def api_record_adjustment(req: AdjustmentRequest):
-    res = record_adjustment(req.product_id, req.warehouse_id, req.quantity_diff, req.reason)
-    if res["status"] == "error":
-        raise HTTPException(status_code=400, detail=res["message"])
-    return res
-
-
-@router.get("/api/transactions")
-def api_get_transactions():
-    return get_transactions()
-
-
-@router.get("/api/inventory/predictions")
-def api_get_demand_predictions():
-    return get_demand_predictions()
-
-
-@router.get("/api/inventory/suggestions")
-def api_get_reorder_suggestions():
-    return get_reorder_suggestions()
-
-
-@router.get("/api/export/csv")
-def api_export_csv():
-    output = io.StringIO()
-    writer = csv.writer(output)
-    
-    writer.writerow(["--- INVENTORY & STOCK ---"])
-    products = get_products()
-    if products:
-        writer.writerow(products[0].keys())
-        for p in products:
-            writer.writerow(p.values())
-            
-    writer.writerow([])
-    writer.writerow(["--- TRANSACTIONS & ORDERS ---"])
-    txs = get_transactions()
-    if txs:
-        writer.writerow(txs[0].keys())
-        for t in txs:
-            writer.writerow(t.values())
-            
-    writer.writerow([])
-    writer.writerow(["--- SUPPLIERS ---"])
-    sups = get_suppliers()
-    if sups:
-        writer.writerow(sups[0].keys())
-        for s in sups:
-            writer.writerow(s.values())
-            
-    output.seek(0)
-    return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=opsify_ledger_export.csv"}
-    )
-
-
-# ── Product CRUD Extensions ──────────────────────────────────────────────────
 
 @router.put("/api/products/{product_id}")
-def api_update_product(product_id: int, req: UpdateProductRequest):
+def api_update_product(product_id: int, req: UpdateProductRequest,
+                       x_user_id: Optional[str] = Header(None)):
     res = update_product(
-        product_id=product_id,
-        name=req.name,
-        category=req.category,
-        variant=req.variant,
-        unit=req.unit,
-        cost_price=req.cost_price,
-        selling_price=req.selling_price,
-        supplier_id=req.supplier_id,
-        reorder_threshold=req.reorder_threshold,
-        stock=req.stock,
-        warehouse_id=req.warehouse_id,
+        product_id=product_id, user_id=_uid(x_user_id),
+        name=req.name, category=req.category, variant=req.variant,
+        unit=req.unit, cost_price=req.cost_price, selling_price=req.selling_price,
+        supplier_id=req.supplier_id, reorder_threshold=req.reorder_threshold,
+        stock=req.stock, warehouse_id=req.warehouse_id,
     )
     if res["status"] == "error":
         raise HTTPException(status_code=400, detail=res["message"])
@@ -483,64 +253,78 @@ def api_update_product(product_id: int, req: UpdateProductRequest):
 
 
 @router.delete("/api/products/{product_id}")
-def api_delete_product(product_id: int):
-    res = delete_product(product_id)
+def api_delete_product(product_id: int, x_user_id: Optional[str] = Header(None)):
+    res = delete_product(product_id, _uid(x_user_id))
     if res["status"] == "error":
         raise HTTPException(status_code=404, detail=res["message"])
     return res
 
 
-# ── Supplier CRUD Extensions ─────────────────────────────────────────────────
+# ── Transactions ──────────────────────────────────────────────────────────────
 
-@router.put("/api/suppliers/{supplier_id}")
-def api_update_supplier(supplier_id: int, req: UpdateSupplierRequest):
-    res = update_supplier(
-        supplier_id=supplier_id,
-        name=req.name,
-        contact=req.contact,
-        rating=req.rating,
-        reliability_score=req.reliability_score,
-        lead_time_days=req.lead_time_days,
-    )
+@router.get("/api/transactions")
+def api_get_transactions(x_user_id: Optional[str] = Header(None)):
+    return get_transactions(_uid(x_user_id))
+
+
+@router.post("/api/transactions/sale")
+def api_record_sale(req: TransactionRequest, x_user_id: Optional[str] = Header(None)):
+    res = record_sale(req.product_id, req.warehouse_id, req.quantity, req.value, _uid(x_user_id))
     if res["status"] == "error":
         raise HTTPException(status_code=400, detail=res["message"])
     return res
 
 
-@router.delete("/api/suppliers/all")
-def api_delete_all_suppliers():
-    res = delete_all_suppliers()
-    return res
-
-
-@router.delete("/api/suppliers/{supplier_id}")
-def api_delete_supplier(supplier_id: int):
-    res = delete_supplier(supplier_id)
+@router.post("/api/transactions/restock")
+def api_record_restock(req: TransactionRequest, x_user_id: Optional[str] = Header(None)):
+    res = record_restock(req.product_id, req.warehouse_id, req.quantity, req.value, _uid(x_user_id))
     if res["status"] == "error":
-        raise HTTPException(status_code=404, detail=res["message"])
+        raise HTTPException(status_code=400, detail=res["message"])
     return res
 
 
-# ── Orders CRUD ──────────────────────────────────────────────────────────────
+@router.post("/api/transactions/adjustment")
+def api_record_adjustment(req: AdjustmentRequest, x_user_id: Optional[str] = Header(None)):
+    res = record_adjustment(req.product_id, req.warehouse_id, req.quantity_diff,
+                            req.reason, _uid(x_user_id))
+    if res["status"] == "error":
+        raise HTTPException(status_code=400, detail=res["message"])
+    return res
+
+
+# ── Analytics ─────────────────────────────────────────────────────────────────
+
+@router.get("/api/inventory/predictions")
+def api_get_demand_predictions(x_user_id: Optional[str] = Header(None)):
+    return get_demand_predictions(_uid(x_user_id))
+
+
+@router.get("/api/inventory/suggestions")
+def api_get_reorder_suggestions(x_user_id: Optional[str] = Header(None)):
+    return get_reorder_suggestions(_uid(x_user_id))
+
+
+@router.get("/api/analytics/profit")
+def api_get_profit_summary(x_user_id: Optional[str] = Header(None)):
+    return get_profit_summary(_uid(x_user_id))
+
+
+# ── Orders ────────────────────────────────────────────────────────────────────
 
 @router.get("/api/orders")
-def api_get_orders():
-    return get_orders()
+def api_get_orders(x_user_id: Optional[str] = Header(None)):
+    return get_orders(_uid(x_user_id))
 
 
 @router.post("/api/orders/add")
-def api_add_order(req: OrderRequest):
-    import uuid
+def api_add_order(req: OrderRequest, x_user_id: Optional[str] = Header(None)):
     order_ref = req.order_ref or f"ORD-{uuid.uuid4().hex[:6].upper()}"
     total = req.total_value if req.total_value is not None else req.quantity * req.unit_price
     res = add_order(
-        order_ref=order_ref,
-        customer_name=req.customer_name,
-        product_id=req.product_id,
-        warehouse_id=req.warehouse_id,
-        quantity=req.quantity,
-        unit_price=req.unit_price,
-        total_value=total,
+        order_ref=order_ref, customer_name=req.customer_name,
+        product_id=req.product_id, warehouse_id=req.warehouse_id,
+        quantity=req.quantity, unit_price=req.unit_price, total_value=total,
+        user_id=_uid(x_user_id),
     )
     if res["status"] == "error":
         raise HTTPException(status_code=400, detail=res["message"])
@@ -548,23 +332,211 @@ def api_add_order(req: OrderRequest):
 
 
 @router.put("/api/orders/{order_id}/status")
-def api_update_order_status(order_id: int, req: OrderStatusRequest):
-    res = update_order_status(order_id, req.status)
+def api_update_order_status(order_id: int, req: OrderStatusRequest,
+                            x_user_id: Optional[str] = Header(None)):
+    res = update_order_status(order_id, req.status, _uid(x_user_id))
+    if res["status"] == "error":
+        raise HTTPException(status_code=400, detail=res["message"])
+    return res
+
+
+@router.post("/api/orders/{order_id}/dispatch")
+def api_dispatch_order(order_id: int, req: DispatchRequest,
+                       x_user_id: Optional[str] = Header(None)):
+    res = dispatch_order(order_id, req.courier_name, req.courier_phone, _uid(x_user_id))
     if res["status"] == "error":
         raise HTTPException(status_code=400, detail=res["message"])
     return res
 
 
 @router.delete("/api/orders/{order_id}")
-def api_delete_order(order_id: int):
-    res = delete_order(order_id)
+def api_delete_order(order_id: int, x_user_id: Optional[str] = Header(None)):
+    res = delete_order(order_id, _uid(x_user_id))
     if res["status"] == "error":
         raise HTTPException(status_code=404, detail=res["message"])
     return res
 
 
-# ── Analytics ─────────────────────────────────────────────────────────────────
+# ── Activity Log ──────────────────────────────────────────────────────────────
 
-@router.get("/api/analytics/profit")
-def api_get_profit_summary():
-    return get_profit_summary()
+@router.get("/api/activity-log")
+def api_get_activity_log(limit: int = 100, x_user_id: Optional[str] = Header(None)):
+    return get_activity_log(_uid(x_user_id), limit)
+
+
+# ── Onboarding ────────────────────────────────────────────────────────────────
+
+@router.get("/api/onboarding/status")
+def api_onboarding_status(x_user_id: Optional[str] = Header(None)):
+    uid = _uid(x_user_id)
+    return {"onboarded": user_is_onboarded(uid)}
+
+
+@router.post("/api/onboarding/seed")
+def api_onboarding_seed(x_user_id: Optional[str] = Header(None)):
+    uid = _uid(x_user_id)
+    seed_user_data(uid)
+    return {"status": "success", "message": "Sample data loaded."}
+
+
+@router.post("/api/onboarding/init")
+def api_onboarding_init(x_user_id: Optional[str] = Header(None)):
+    uid = _uid(x_user_id)
+    init_empty_user(uid)
+    return {"status": "success", "message": "Empty workspace created."}
+
+
+# ── Vendor / Supplier Finder ──────────────────────────────────────────────────
+
+@router.get("/api/vendors/search")
+def api_search_vendors(query: str, location: str = "Karachi",
+                       x_user_id: Optional[str] = Header(None)):
+    import os, requests as req_lib
+    api_key = os.environ.get("GOOGLE_MAPS_API_KEY")
+    if api_key:
+        try:
+            url = (f"https://maps.googleapis.com/maps/api/place/textsearch/json"
+                   f"?query={query}+wholesale+{location}&key={api_key}")
+            res = req_lib.get(url).json()
+            if res.get("status") == "OK":
+                vendors = []
+                for i, p in enumerate(res.get("results", [])[:5]):
+                    rating = p.get("rating", round(random.uniform(4.0, 4.9), 1))
+                    vendors.append({
+                        "id": f"map-{i}", "name": p.get("name"),
+                        "address": p.get("formatted_address"), "rating": rating,
+                        "distance": f"{round(random.uniform(0.5, 6.0), 1)} km",
+                        "price": f"Rs {round(random.uniform(50.0, 500.0), 1)}",
+                        "contact": p.get("formatted_phone_number", f"+92-300-{random.randint(1000000,9999999)}"),
+                        "reliability_score": round(90.0 - random.uniform(0,10) + rating * 2, 1),
+                    })
+                return {"status": "success", "vendors": vendors}
+        except Exception as e:
+            print(f"[Vendor Search] Maps API failed: {e}")
+
+    # OpenStreetMap fallback
+    try:
+        import requests as r
+        headers = {"User-Agent": "OpsifyERP/1.0"}
+        res = r.get(f"https://nominatim.openstreetmap.org/search?q={query}+{location}&format=json&limit=5",
+                    headers=headers, timeout=8).json()
+        if res:
+            vendors = []
+            for i, item in enumerate(res):
+                parts = [p.strip() for p in item.get("display_name", f"{query.title()}").split(",")]
+                name = parts[0] if len(parts[0]) >= 10 else f"{parts[0]} ({parts[1]})" if len(parts) > 1 else parts[0]
+                vendors.append({
+                    "id": f"osm-{i}", "name": name,
+                    "address": item.get("display_name", "")[:120],
+                    "rating": round(random.uniform(4.0, 4.9), 1),
+                    "distance": f"{round(random.uniform(0.5, 6.0), 1)} km",
+                    "price": f"Rs {round(random.uniform(50.0, 500.0), 1)}",
+                    "contact": f"+92-300-{random.randint(1000000, 9999999)}",
+                    "reliability_score": round(random.uniform(70.0, 95.0), 1),
+                })
+            return {"status": "success", "vendors": vendors}
+    except Exception as e:
+        print(f"[Vendor Search] OSM failed: {e}")
+
+    # Mock fallback
+    kw = query.lower()
+    prefixes = (
+        ["Sindh Farms Milk", "National Dairy", "Pak-Arab Wholesalers", "Karachi Fresh Milk", "Premium Farms Wholesalers"] if any(x in kw for x in ["milk","dairy"])
+        else ["Pakistan Cables", "Gulshan Electric", "DHA Copper Mills", "Karachi Hardware", "Indus Metal Hub"] if any(x in kw for x in ["wire","copper","metal"])
+        else ["Indus PVC Pipes", "Karachi Plumbing", "Standard Fitting Co.", "Super Pipe Wholesalers", "Clifton Hardware Hub"] if any(x in kw for x in ["pipe","pvc"])
+        else ["BakeHouse Wholesalers", "National Bread Co.", "Standard Grain", "Premium Flour", "Karachi Loaf Dist."] if any(x in kw for x in ["bread","bakery"])
+        else [f"Karachi {query.title()} Traders", f"{location} {query.title()} Co.", f"Sindh Wholesale {query.title()}", f"Prime {query.title()}", f"Apex {query.title()} Dist."]
+    )
+    random.seed(len(kw) + len(location))
+    vendors = []
+    for i, prefix in enumerate(prefixes[:5]):
+        rating = round(random.uniform(4.0, 5.0), 1)
+        vendors.append({
+            "id": f"mock-{i}", "name": prefix,
+            "address": f"Plot {random.randint(10,250)}, Block {random.randint(1,9)}, {location}",
+            "rating": rating,
+            "distance": f"{round(random.uniform(0.5, 5.0), 1)} km",
+            "price": f"Rs {round(random.uniform(50.0, 500.0), 1)}",
+            "contact": f"+92-321-{random.randint(1000000, 9999999)}",
+            "reliability_score": round(90.0 - i * 2 + rating * 2, 1),
+        })
+    return {"status": "success", "vendors": vendors}
+
+
+# ── Procurement ──────────────────────────────────────────────────────────────
+
+@router.post("/api/procurement/suggest")
+def api_procurement_suggest(req: ProcurementSuggestRequest):
+    from agents.bidding_agent import generate_procurement_suggestions
+    return {"suggestions": generate_procurement_suggestions(req.product_name, req.lat, req.lng)}
+
+
+@router.post("/api/procurement/approve")
+async def api_procurement_approve(req: ProcurementApproveRequest,
+                                  x_user_id: Optional[str] = Header(None)):
+    uid = _uid(x_user_id)
+    vendor = req.vendor
+    name = vendor.get("name", "Unknown Supplier")
+    sups = get_suppliers(uid)
+    sup_id = next((s["id"] for s in sups if s["name"] == name), None)
+    if not sup_id:
+        res = add_supplier(name=name, contact=vendor.get("contact", ""),
+                           rating=vendor.get("rating", 4.0),
+                           reliability_score=vendor.get("reliability_score", 80.0),
+                           lead_time_days=vendor.get("lead_time_days", 1),
+                           user_id=uid)
+        if res["status"] == "error":
+            raise HTTPException(status_code=400, detail=res["message"])
+        sup_id = res.get("id", 1)
+    price_str = str(vendor.get("price", "0"))
+    try:
+        price_val = float(''.join(c for c in price_str if c.isdigit() or c == '.'))
+    except ValueError:
+        price_val = 100.0
+    res = record_restock(req.product_id, req.warehouse_id, req.quantity,
+                         price_val * req.quantity, uid)
+    if res["status"] == "error":
+        raise HTTPException(status_code=400, detail=res["message"])
+    await broker.publish("SYSTEM_LOG", "ProcurementEngine", {
+        "message": f"Procurement Approved: {req.quantity} units from {name} for Rs {price_val * req.quantity:.0f}."
+    })
+    return {"status": "success", "message": "Procurement approved and stock updated."}
+
+
+# ── OpsBot Chat ───────────────────────────────────────────────────────────────
+
+@router.post("/api/chat")
+async def api_chat(req: ChatRequest, x_user_id: Optional[str] = Header(None)):
+    from agents.chat_agent import run_chat
+    uid = req.user_id or _uid(x_user_id)
+    msgs = [{"role": m.role, "content": m.content, "timestamp": None} for m in req.messages]
+    result = run_chat(msgs)
+    return result
+
+
+# ── CSV Export ───────────────────────────────────────────────────────────────
+
+@router.get("/api/export/csv")
+def api_export_csv(x_user_id: Optional[str] = Header(None)):
+    from fastapi.responses import StreamingResponse
+    uid = _uid(x_user_id)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["--- INVENTORY & STOCK ---"])
+    products = get_products(uid)
+    if products:
+        writer.writerow(products[0].keys()); [writer.writerow(p.values()) for p in products]
+    writer.writerow([]); writer.writerow(["--- TRANSACTIONS ---"])
+    txs = get_transactions(uid)
+    if txs:
+        writer.writerow(txs[0].keys()); [writer.writerow(t.values()) for t in txs]
+    writer.writerow([]); writer.writerow(["--- SUPPLIERS ---"])
+    sups = get_suppliers(uid)
+    if sups:
+        writer.writerow(sups[0].keys()); [writer.writerow(s.values()) for s in sups]
+    output.seek(0)
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(
+        iter([output.getvalue()]), media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=opsify_ledger_export.csv"}
+    )

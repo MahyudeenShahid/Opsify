@@ -13,9 +13,9 @@ import { Theme } from '../core/theme';
 import { ApiService } from '../services/api';
 
 const URGENCY_CONFIG: Record<string, { color: string; bg: string; label: string; emoji: string }> = {
-  CRITICAL: { color: '#FF2A55', bg: 'rgba(255,42,85,0.1)',   label: 'CRITICAL', emoji: '🚨' },
-  HIGH:     { color: '#FF9100', bg: 'rgba(255,145,0,0.1)',   label: 'HIGH',     emoji: '⚠️' },
-  MEDIUM:   { color: '#FFB800', bg: 'rgba(255,184,0,0.08)',  label: 'MEDIUM',   emoji: '🟡' },
+  CRITICAL: { color: '#FF2A55', bg: 'rgba(255,42,85,0.1)', label: 'CRITICAL', emoji: '🚨' },
+  HIGH: { color: '#FF9100', bg: 'rgba(255,145,0,0.1)', label: 'HIGH', emoji: '⚠️' },
+  MEDIUM: { color: '#FFB800', bg: 'rgba(255,184,0,0.08)', label: 'MEDIUM', emoji: '🟡' },
 };
 
 export const ERPAgentScreen: React.FC = () => {
