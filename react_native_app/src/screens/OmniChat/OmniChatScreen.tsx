@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, Alert, TextInput, TouchableOpacity, Text, ActivityIndicator } from 'react-native';
 import { ChatListScreen } from './ChatListScreen';
 import { ChatRoomScreen } from './ChatRoomScreen';
@@ -7,11 +7,22 @@ import { Theme } from '../../core/theme';
 
 type Screen = 'list' | 'room' | 'new-chat';
 
-export const OmniChatScreen = ({ currentUserId }: { currentUserId: string }) => {
+interface Props {
+  currentUserId: string;
+  setIsFloatingBotHidden?: (hidden: boolean) => void;
+}
+
+export const OmniChatScreen = ({ currentUserId, setIsFloatingBotHidden }: Props) => {
   const [screen, setScreen] = useState<Screen>('list');
   const [selectedChat, setSelectedChat] = useState<{ chat: Chat; otherUser: User } | null>(null);
   const [searchEmail, setSearchEmail] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+
+  useEffect(() => {
+    if (setIsFloatingBotHidden) {
+      setIsFloatingBotHidden(screen === 'room');
+    }
+  }, [screen, setIsFloatingBotHidden]);
 
   if (!currentUserId) return null;
 

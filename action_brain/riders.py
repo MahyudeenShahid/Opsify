@@ -23,8 +23,18 @@ RIDER_POOL: List[Dict[str, Any]] = [
     {"id": "R006", "name": "Usman Farooq",    "phone": "+92-322-6543210", "depot": "Saddar",  "lat": 24.8650, "lng": 67.0200, "vehicle": "Van",   "rating": 4.4},
 ]
 
-# Sync the pool into the DB on module import (upsert — won't overwrite BUSY status)
-sync_rider_pool(RIDER_POOL)
+# Sync is deferred to first real call to avoid blocking startup / test imports
+_riders_synced = False
+
+def _ensure_synced():
+    global _riders_synced
+    if not _riders_synced:
+        try:
+            sync_rider_pool(RIDER_POOL)
+            _riders_synced = True
+        except Exception:
+            pass  # Fail silently if Firestore unavailable at startup
+
 
 
 def allocate_rider(destination_zone: str) -> Dict[str, Any]:
@@ -34,6 +44,7 @@ def allocate_rider(destination_zone: str) -> Dict[str, Any]:
     2. Compute OSRM route from each available rider to the destination.
     3. Rank by lowest ETA and return the winner.
     """
+    _ensure_synced()
     dest_lat, dest_lng = zone_to_coords(destination_zone)
 
     # Refresh availability from DB
@@ -56,6 +67,7 @@ def allocate_rider(destination_zone: str) -> Dict[str, Any]:
 
 def get_all_riders() -> List[Dict[str, Any]]:
     """Return all riders with current DB status attached."""
+    _ensure_synced()
     statuses = get_rider_statuses()
     return [{**r, "status": statuses.get(r["id"], "AVAILABLE")} for r in RIDER_POOL]
 

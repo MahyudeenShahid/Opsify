@@ -161,7 +161,12 @@ export default function App() {
           {activeTab === 'inventory' && <InventoryDashboardScreen />}
         </ErrorBoundary>
         <ErrorBoundary fallbackTitle="OmniChat Error">
-          {activeTab === 'omnichat' && <OmniChatScreen currentUserId={user.uid} />}
+          {activeTab === 'omnichat' && (
+            <OmniChatScreen
+              currentUserId={user.uid}
+              setIsFloatingBotHidden={setIsFloatingBotHidden}
+            />
+          )}
         </ErrorBoundary>
         <ErrorBoundary fallbackTitle="Delivery Error">
           {activeTab === 'logistics' && <DeliveryIntelligenceScreen />}
