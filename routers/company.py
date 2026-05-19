@@ -7,7 +7,7 @@ import io
 import csv
 import random
 import uuid
-from typing import Optional, List
+from typing import Optional, List, Union, Any
 from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Header
 
@@ -67,8 +67,8 @@ class ProductRequest(BaseModel):
     unit: Optional[str] = "units"
     cost_price: float
     selling_price: float
-    supplier_id: Optional[int] = None
-    warehouse_id: Optional[int] = 1
+    supplier_id: Optional[Union[int, str]] = None
+    warehouse_id: Optional[Union[int, str]] = 1
     initial_stock: Optional[float] = None
     stock: Optional[float] = None
     reorder_threshold: Optional[float] = 0.0
@@ -80,16 +80,16 @@ class UpdateProductRequest(BaseModel):
     unit: Optional[str] = None
     cost_price: Optional[float] = None
     selling_price: Optional[float] = None
-    supplier_id: Optional[int] = None
+    supplier_id: Optional[Union[int, str]] = None
     reorder_threshold: Optional[float] = None
     stock: Optional[float] = None
-    warehouse_id: Optional[int] = 1
+    warehouse_id: Optional[Union[int, str]] = 1
 
 class OrderRequest(BaseModel):
     order_ref: Optional[str] = None
     customer_name: str
-    product_id: int
-    warehouse_id: int = 1
+    product_id: Union[int, str]
+    warehouse_id: Union[int, str] = 1
     quantity: float
     unit_price: float
     total_value: Optional[float] = None
@@ -110,20 +110,20 @@ class DispatchRequest(BaseModel):
     courier_phone: str
 
 class TransactionRequest(BaseModel):
-    product_id: int
-    warehouse_id: int
+    product_id: Union[int, str]
+    warehouse_id: Union[int, str]
     quantity: float
     value: float
 
 class AdjustmentRequest(BaseModel):
-    product_id: int
-    warehouse_id: int
+    product_id: Union[int, str]
+    warehouse_id: Union[int, str]
     quantity_diff: float
     reason: str
 
 class ProcurementApproveRequest(BaseModel):
-    product_id: int
-    warehouse_id: int
+    product_id: Union[int, str]
+    warehouse_id: Union[int, str]
     quantity: float
     vendor: dict
 
@@ -238,7 +238,7 @@ def api_add_product(req: ProductRequest, x_user_id: Optional[str] = Header(None)
 
 
 @router.put("/api/products/{product_id}")
-def api_update_product(product_id: int, req: UpdateProductRequest,
+def api_update_product(product_id: str, req: UpdateProductRequest,
                        x_user_id: Optional[str] = Header(None)):
     res = update_product(
         product_id=product_id, user_id=_uid(x_user_id),
@@ -253,7 +253,7 @@ def api_update_product(product_id: int, req: UpdateProductRequest,
 
 
 @router.delete("/api/products/{product_id}")
-def api_delete_product(product_id: int, x_user_id: Optional[str] = Header(None)):
+def api_delete_product(product_id: str, x_user_id: Optional[str] = Header(None)):
     res = delete_product(product_id, _uid(x_user_id))
     if res["status"] == "error":
         raise HTTPException(status_code=404, detail=res["message"])

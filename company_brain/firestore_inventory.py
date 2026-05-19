@@ -52,6 +52,18 @@ def _numeric_doc_id(doc_id: Any) -> int:
         return 0
 
 
+def _normalize_id(val: Any) -> Any:
+    if val is None:
+        return None
+    s = str(val).strip()
+    try:
+        if "." in s:
+            return int(float(s))
+        return int(s)
+    except Exception:
+        return s
+
+
 def _next_numeric_id(user_id: str, collection: str) -> int:
     docs = list(_col(user_id, collection).stream())
     if not docs:
@@ -175,8 +187,9 @@ def get_warehouses(user_id: str = DEFAULT_USER_ID) -> List[Dict[str, Any]]:
     return [_doc_data(doc) for doc in _col(user_id, COL_WAREHOUSES).order_by("id").stream()]
 
 
-def get_warehouse_by_id(warehouse_id: int, user_id: str = DEFAULT_USER_ID) -> Optional[Dict[str, Any]]:
-    snap = _col(user_id, COL_WAREHOUSES).document(str(int(warehouse_id))).get()
+def get_warehouse_by_id(warehouse_id: Any, user_id: str = DEFAULT_USER_ID) -> Optional[Dict[str, Any]]:
+    wid = _normalize_id(warehouse_id)
+    snap = _col(user_id, COL_WAREHOUSES).document(str(wid)).get()
     return _doc_data(snap) if snap.exists else None
 
 
@@ -321,8 +334,9 @@ def _find_product_by_sku(sku: str, user_id: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def get_product_by_id(product_id: int, user_id: str = DEFAULT_USER_ID) -> Optional[Dict[str, Any]]:
-    snap = _col(user_id, COL_PRODUCTS).document(str(int(product_id))).get()
+def get_product_by_id(product_id: Any, user_id: str = DEFAULT_USER_ID) -> Optional[Dict[str, Any]]:
+    pid = _normalize_id(product_id)
+    snap = _col(user_id, COL_PRODUCTS).document(str(pid)).get()
     return _doc_data(snap) if snap.exists else None
 
 
@@ -343,13 +357,15 @@ def search_products_by_name_fragment(fragment: str, user_id: str = DEFAULT_USER_
     ]
 
 
-def get_stock_record(product_id: int, warehouse_id: int, user_id: str = DEFAULT_USER_ID) -> Optional[Dict[str, Any]]:
-    snap = _col(user_id, COL_STOCK).document(f"{int(product_id)}:{int(warehouse_id)}").get()
+def get_stock_record(product_id: Any, warehouse_id: Any, user_id: str = DEFAULT_USER_ID) -> Optional[Dict[str, Any]]:
+    pid = _normalize_id(product_id)
+    wid = _normalize_id(warehouse_id)
+    snap = _col(user_id, COL_STOCK).document(f"{pid}:{wid}").get()
     if not snap.exists:
         return None
     data = _doc_data(snap)
-    product   = get_product_by_id(int(product_id), user_id) or {}
-    warehouse = get_warehouse_by_id(int(warehouse_id), user_id) or {}
+    product   = get_product_by_id(pid, user_id) or {}
+    warehouse = get_warehouse_by_id(wid, user_id) or {}
     return {**data, "product_name": product.get("name"), "unit": product.get("unit"), "warehouse_name": warehouse.get("name")}
 
 
@@ -396,11 +412,19 @@ def add_product(sku: str, name: str, category: str, variant: str, unit: str,
     return {"status": "success", "id": pid}
 
 
-def update_product(product_id: int, user_id: str = DEFAULT_USER_ID, warehouse_id: int = 1,
+def update_product(product_id: Any, user_id: str = DEFAULT_USER_ID, warehouse_id: int = 1,
                    name=None, category=None, variant=None, unit=None,
                    cost_price=None, selling_price=None, supplier_id=None,
                    reorder_threshold=None, stock=None) -> Dict[str, Any]:
-    ref = _col(user_id, COL_PRODUCTS).document(str(int(product_id)))
+    db_id = str(product_id)
+    ref = _col(user_id, COL_PRODUCTS).document(db_id)
+    if not ref.get().exists:
+        try:
+            int_id = str(int(float(product_id)))
+            ref = _col(user_id, COL_PRODUCTS).document(int_id)
+            product_id = int(float(product_id))
+        except Exception:
+            pass
     if not ref.get().exists:
         return {"status": "error", "message": f"Product {product_id} not found."}
     updates = {k: v for k, v in dict(name=name, category=category, variant=variant, unit=unit,
@@ -419,8 +443,16 @@ def update_product(product_id: int, user_id: str = DEFAULT_USER_ID, warehouse_id
     return {"status": "success", "id": product_id}
 
 
-def delete_product(product_id: int, user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
-    ref = _col(user_id, COL_PRODUCTS).document(str(int(product_id)))
+def delete_product(product_id: Any, user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
+    db_id = str(product_id)
+    ref = _col(user_id, COL_PRODUCTS).document(db_id)
+    if not ref.get().exists:
+        try:
+            int_id = str(int(float(product_id)))
+            ref = _col(user_id, COL_PRODUCTS).document(int_id)
+            product_id = int(float(product_id))
+        except Exception:
+            pass
     if not ref.get().exists:
         return {"status": "error", "message": f"Product {product_id} not found."}
     for doc in _col(user_id, COL_STOCK).stream():
@@ -436,11 +468,13 @@ def delete_product(product_id: int, user_id: str = DEFAULT_USER_ID) -> Dict[str,
 
 # ── Transactions ──────────────────────────────────────────────────────────────
 
-def _write_transaction(product_id: int, warehouse_id: int, tx_type: str, reason: Optional[str],
+def _write_transaction(product_id: Any, warehouse_id: Any, tx_type: str, reason: Optional[str],
                        qty: float, total_value: float, user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
-    stock_record = get_stock_record(product_id, warehouse_id, user_id)
+    pid = _normalize_id(product_id)
+    wid = _normalize_id(warehouse_id)
+    stock_record = get_stock_record(pid, wid, user_id)
     if not stock_record:
-        raise ValueError(f"Product {product_id} not found in Warehouse {warehouse_id}.")
+        raise ValueError(f"Product {pid} not found in Warehouse {wid}.")
 
     current_stock = float(stock_record["stock"])
     reorder_threshold = float(stock_record.get("reorder_threshold", 0.0))
@@ -449,27 +483,27 @@ def _write_transaction(product_id: int, warehouse_id: int, tx_type: str, reason:
     if new_stock < 0 and tx_type != "ADJUSTMENT":
         raise ValueError(f"Insufficient stock. Available: {current_stock}")
 
-    _col(user_id, COL_STOCK).document(f"{int(product_id)}:{int(warehouse_id)}").set({
-        "product_id": int(product_id), "warehouse_id": int(warehouse_id),
+    _col(user_id, COL_STOCK).document(f"{pid}:{wid}").set({
+        "product_id": pid, "warehouse_id": wid,
         "stock": new_stock, "reorder_threshold": reorder_threshold,
         "updated_at": utc_now().isoformat(),
     })
-    product = get_product_by_id(product_id, user_id) or {}
+    product = get_product_by_id(pid, user_id) or {}
     tx_doc = {
-        "product_id": int(product_id), "warehouse_id": int(warehouse_id),
+        "product_id": pid, "warehouse_id": wid,
         "type": tx_type, "reason": reason, "quantity": float(qty),
         "total_value": float(total_value), "timestamp": utc_now().isoformat(),
         "product_name": product.get("name", ""), "unit": product.get("unit", ""),
     }
     _col(user_id, COL_TRANSACTIONS).add(tx_doc)
     log_activity(user_id, tx_type, "transaction", {
-        "product_id": product_id, "product_name": product.get("name"),
-        "qty": qty, "value": total_value, "warehouse_id": warehouse_id,
+        "product_id": pid, "product_name": product.get("name"),
+        "qty": qty, "value": total_value, "warehouse_id": wid,
     })
     return {"status": "success", "remaining_stock": new_stock, "reorder_warning": new_stock <= reorder_threshold}
 
 
-def record_sale(product_id: int, warehouse_id: int, quantity: float,
+def record_sale(product_id: Any, warehouse_id: Any, quantity: float,
                 revenue: float, user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
     try:
         return _write_transaction(product_id, warehouse_id, "SALE", None, quantity, revenue, user_id)
@@ -477,7 +511,7 @@ def record_sale(product_id: int, warehouse_id: int, quantity: float,
         return {"status": "error", "message": str(e)}
 
 
-def record_restock(product_id: int, warehouse_id: int, quantity: float,
+def record_restock(product_id: Any, warehouse_id: Any, quantity: float,
                    cost: float, user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
     try:
         return _write_transaction(product_id, warehouse_id, "RESTOCK", None, quantity, cost, user_id)
@@ -485,7 +519,7 @@ def record_restock(product_id: int, warehouse_id: int, quantity: float,
         return {"status": "error", "message": str(e)}
 
 
-def record_adjustment(product_id: int, warehouse_id: int, quantity_diff: float,
+def record_adjustment(product_id: Any, warehouse_id: Any, quantity_diff: float,
                       reason: str, user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
     if not reason:
         return {"status": "error", "message": "Adjustment requires a reason."}

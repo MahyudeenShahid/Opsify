@@ -8,7 +8,7 @@ import { BlurView } from 'expo-blur';
 import {
   Activity, ScanLine, Play, CheckCircle, XCircle, Clock,
   MessageSquare, Package, Zap, ChevronDown, ChevronUp,
-  Send, Mic, MicOff, RefreshCw, History, AlertCircle, Trash2
+  Send, Mic, MicOff, RefreshCw, History, AlertCircle, Trash2, Edit2
 } from 'lucide-react-native';
 
 import { Theme } from '../core/theme';
@@ -70,15 +70,25 @@ const OrderCard = ({
   index,
   onApprove,
   onReject,
+  onSave,
 }: {
   order: DetectedOrder;
   index: number;
   onApprove: () => void;
   onReject: () => void;
+  onSave: (updated: DetectedOrder) => void;
 }) => {
   const slideY = useRef(new Animated.Value(40)).current;
   const fadeIn = useRef(new Animated.Value(0)).current;
   const [showSource, setShowSource] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+
+  // Edit fields
+  const [editItem, setEditItem] = useState(order.item);
+  const [editQuantity, setEditQuantity] = useState(String(order.quantity));
+  const [editValue, setEditValue] = useState(String(order.value));
+  const [editWarehouse, setEditWarehouse] = useState(String(order.warehouse_id));
+  const [editType, setEditType] = useState(order.type);
 
   useEffect(() => {
     Animated.parallel([
@@ -87,8 +97,50 @@ const OrderCard = ({
     ]).start();
   }, []);
 
-  const isSale    = order.type === 'SALE';
-  const isRestock = order.type === 'RESTOCK';
+  const handleSaveClick = () => {
+    const qty = parseFloat(editQuantity);
+    const val = parseFloat(editValue);
+    const wh = parseInt(editWarehouse, 10);
+
+    if (!editItem.trim()) {
+      Alert.alert('Validation Error', 'Item name cannot be empty.');
+      return;
+    }
+    if (isNaN(qty) || qty <= 0) {
+      Alert.alert('Validation Error', 'Quantity must be a positive number.');
+      return;
+    }
+    if (isNaN(val) || val < 0) {
+      Alert.alert('Validation Error', 'Value must be a valid number.');
+      return;
+    }
+    if (isNaN(wh) || wh <= 0) {
+      Alert.alert('Validation Error', 'Warehouse ID must be a positive integer.');
+      return;
+    }
+
+    onSave({
+      ...order,
+      item: editItem.trim(),
+      quantity: qty,
+      value: val,
+      warehouse_id: wh,
+      type: editType,
+    });
+    setIsEditing(false);
+  };
+
+  const handleCancelClick = () => {
+    setEditItem(order.item);
+    setEditQuantity(String(order.quantity));
+    setEditValue(String(order.value));
+    setEditWarehouse(String(order.warehouse_id));
+    setEditType(order.type);
+    setIsEditing(false);
+  };
+
+  const isSale    = editType === 'SALE';
+  const isRestock = editType === 'RESTOCK';
   const typeColor = isSale ? Theme.colors.primary : isRestock ? '#00B0FF' : Theme.colors.warning;
   const typeBg    = isSale ? 'rgba(0,230,118,0.08)' : isRestock ? 'rgba(0,176,255,0.08)' : 'rgba(255,184,0,0.08)';
   const conf      = order.confidence || 'MEDIUM';
@@ -102,70 +154,160 @@ const OrderCard = ({
       <View style={styles.cardTop}>
         <View style={{ flex: 1 }}>
           <View style={styles.cardTopRow}>
-            <View style={[styles.typePill, { backgroundColor: `${typeColor}15`, borderColor: typeColor }]}>
-              <Text style={[styles.typePillText, { color: typeColor }]}>{order.type}</Text>
-            </View>
-            <View style={[styles.confPill, { backgroundColor: confCfg.bg, borderColor: confCfg.color }]}>
-              <Text style={[styles.confPillText, { color: confCfg.color }]}>{conf}</Text>
-            </View>
+            {isEditing ? (
+              <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8 }}>
+                <TouchableOpacity
+                  style={[styles.typeSelectBtn, editType === 'SALE' && { backgroundColor: Theme.colors.primary, borderColor: Theme.colors.primary }]}
+                  onPress={() => setEditType('SALE')}
+                >
+                  <Text style={[styles.typeSelectBtnText, editType === 'SALE' && { color: '#000' }]}>SALE</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.typeSelectBtn, editType === 'RESTOCK' && { backgroundColor: '#00B0FF', borderColor: '#00B0FF' }]}
+                  onPress={() => setEditType('RESTOCK')}
+                >
+                  <Text style={[styles.typeSelectBtnText, editType === 'RESTOCK' && { color: '#000' }]}>RESTOCK</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.typeSelectBtn, editType === 'ADJUSTMENT' && { backgroundColor: Theme.colors.warning, borderColor: Theme.colors.warning }]}
+                  onPress={() => setEditType('ADJUSTMENT')}
+                >
+                  <Text style={[styles.typeSelectBtnText, editType === 'ADJUSTMENT' && { color: '#000' }]}>ADJUST</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <>
+                <View style={[styles.typePill, { backgroundColor: `${typeColor}15`, borderColor: typeColor }]}>
+                  <Text style={[styles.typePillText, { color: typeColor }]}>{editType}</Text>
+                </View>
+                <View style={[styles.confPill, { backgroundColor: confCfg.bg, borderColor: confCfg.color }]}>
+                  <Text style={[styles.confPillText, { color: confCfg.color }]}>{conf}</Text>
+                </View>
+              </>
+            )}
           </View>
           <Text style={styles.contactName}>{order.contact_name}</Text>
           <Text style={styles.chatIdText}>chat: {order.chat_id.slice(0, 20)}…</Text>
         </View>
       </View>
 
-      {/* Stats */}
-      <View style={styles.statsRow}>
-        <View style={styles.statBox}>
-          <Text style={styles.statLabel}>ITEM</Text>
-          <Text style={[styles.statValue, { color: typeColor }]}>{order.item}</Text>
+      {/* Stats / Edit Fields */}
+      {isEditing ? (
+        <View style={styles.editFieldsContainer}>
+          <View style={styles.editFieldRow}>
+            <Text style={styles.editFieldLabel}>PRODUCT ITEM</Text>
+            <TextInput
+              style={styles.cardInput}
+              value={editItem}
+              onChangeText={setEditItem}
+              placeholder="e.g. Milk, Wire"
+              placeholderTextColor="rgba(255,255,255,0.3)"
+            />
+          </View>
+
+          <View style={styles.editFieldRowGrid}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.editFieldLabel}>QTY</Text>
+              <TextInput
+                style={styles.cardInput}
+                value={editQuantity}
+                onChangeText={setEditQuantity}
+                keyboardType="numeric"
+              />
+            </View>
+            <View style={{ flex: 1, marginHorizontal: 8 }}>
+              <Text style={styles.editFieldLabel}>VALUE (Rs)</Text>
+              <TextInput
+                style={styles.cardInput}
+                value={editValue}
+                onChangeText={setEditValue}
+                keyboardType="numeric"
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.editFieldLabel}>WH ID</Text>
+              <TextInput
+                style={styles.cardInput}
+                value={editWarehouse}
+                onChangeText={setEditWarehouse}
+                keyboardType="numeric"
+              />
+            </View>
+          </View>
         </View>
-        <View style={styles.statBox}>
-          <Text style={styles.statLabel}>QTY</Text>
-          <Text style={styles.statValue}>{order.quantity}</Text>
+      ) : (
+        <View style={styles.statsRow}>
+          <View style={styles.statBox}>
+            <Text style={styles.statLabel}>ITEM</Text>
+            <Text style={[styles.statValue, { color: typeColor }]}>{editItem}</Text>
+          </View>
+          <View style={styles.statBox}>
+            <Text style={styles.statLabel}>QTY</Text>
+            <Text style={styles.statValue}>{editQuantity}</Text>
+          </View>
+          <View style={styles.statBox}>
+            <Text style={styles.statLabel}>VALUE</Text>
+            <Text style={[styles.statValue, { color: Theme.colors.secondary }]}>Rs {parseFloat(editValue).toFixed(0)}</Text>
+          </View>
+          <View style={styles.statBox}>
+            <Text style={styles.statLabel}>WH</Text>
+            <Text style={styles.statValue}>#{editWarehouse}</Text>
+          </View>
         </View>
-        <View style={styles.statBox}>
-          <Text style={styles.statLabel}>VALUE</Text>
-          <Text style={[styles.statValue, { color: Theme.colors.secondary }]}>Rs {order.value.toFixed(0)}</Text>
-        </View>
-        <View style={styles.statBox}>
-          <Text style={styles.statLabel}>WH</Text>
-          <Text style={styles.statValue}>#{order.warehouse_id}</Text>
-        </View>
-      </View>
+      )}
 
       {/* AI Reason */}
-      <View style={styles.reasonBox}>
-        <Zap size={12} color={Theme.colors.primary} />
-        <Text style={styles.reasonText}>{order.reason}</Text>
-      </View>
+      {!isEditing && (
+        <View style={styles.reasonBox}>
+          <Zap size={12} color={Theme.colors.primary} />
+          <Text style={styles.reasonText}>{order.reason}</Text>
+        </View>
+      )}
 
       {/* Source Message Toggle */}
-      {order.source_message ? (
+      {!isEditing && order.source_message ? (
         <TouchableOpacity style={styles.sourceToggle} onPress={() => setShowSource(!showSource)}>
           <MessageSquare size={12} color={Theme.colors.textMuted} />
           <Text style={styles.sourceToggleText}>Source message</Text>
           {showSource ? <ChevronUp size={12} color={Theme.colors.textMuted} /> : <ChevronDown size={12} color={Theme.colors.textMuted} />}
         </TouchableOpacity>
       ) : null}
-      {showSource && order.source_message ? (
+      {!isEditing && showSource && order.source_message ? (
         <View style={styles.sourceBox}>
           <Text style={styles.sourceText}>"{order.source_message}"</Text>
         </View>
       ) : null}
 
       {/* Action Buttons */}
-      <View style={styles.actionRow}>
-        <TouchableOpacity style={styles.approveBtn} onPress={onApprove}>
-          <LinearGradient colors={Theme.gradients.primary} style={[StyleSheet.absoluteFill, { borderRadius: Theme.borderRadius.md }]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} />
-          <CheckCircle size={16} color="#000" />
-          <Text style={styles.approveBtnText}>Approve & Book</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.rejectBtn} onPress={onReject}>
-          <XCircle size={16} color={Theme.colors.error} />
-          <Text style={styles.rejectBtnText}>Reject</Text>
-        </TouchableOpacity>
-      </View>
+      {isEditing ? (
+        <View style={styles.actionRow}>
+          <TouchableOpacity style={styles.approveBtn} onPress={handleSaveClick}>
+            <LinearGradient colors={Theme.gradients.primary} style={[StyleSheet.absoluteFill, { borderRadius: Theme.borderRadius.md }]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} />
+            <CheckCircle size={16} color="#000" />
+            <Text style={styles.approveBtnText}>Save Changes</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.rejectBtn} onPress={handleCancelClick}>
+            <XCircle size={16} color={Theme.colors.error} />
+            <Text style={styles.rejectBtnText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={styles.actionRow}>
+          <TouchableOpacity style={styles.approveBtn} onPress={onApprove}>
+            <LinearGradient colors={Theme.gradients.primary} style={[StyleSheet.absoluteFill, { borderRadius: Theme.borderRadius.md }]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} />
+            <CheckCircle size={16} color="#000" />
+            <Text style={styles.approveBtnText}>Approve & Book</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.editBtn} onPress={() => setIsEditing(true)}>
+            <Edit2 size={14} color={Theme.colors.text} />
+            <Text style={styles.editBtnText}>Edit</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.rejectBtn} onPress={onReject}>
+            <XCircle size={16} color={Theme.colors.error} />
+            <Text style={styles.rejectBtnText}>Reject</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </Animated.View>
   );
 };
@@ -339,6 +481,39 @@ export const CustomerBrainScreen: React.FC = () => {
     }
   };
 
+  const handleSave = async (originalOrder: DetectedOrder, updatedOrder: DetectedOrder) => {
+    try {
+      const fp = (originalOrder as any).fingerprint;
+      if (fp) {
+        // Persisted order: update on backend/Firestore
+        await ApiService.updatePendingOrder(fp, {
+          item: updatedOrder.item,
+          quantity: updatedOrder.quantity,
+          value: updatedOrder.value,
+          warehouse_id: updatedOrder.warehouse_id,
+          type: updatedOrder.type,
+        });
+        setPersistedOrders(prev => prev.map(o => {
+          if (o.chat_id === originalOrder.chat_id && o.item === originalOrder.item && o.quantity === originalOrder.quantity) {
+            return { ...o, ...updatedOrder };
+          }
+          return o;
+        }));
+      } else {
+        // Newly detected order in active scan: update locally
+        setDetectedOrders(prev => prev.map(o => {
+          if (o.chat_id === originalOrder.chat_id && o.item === originalOrder.item && o.quantity === originalOrder.quantity) {
+            return { ...o, ...updatedOrder };
+          }
+          return o;
+        }));
+      }
+      Alert.alert('✅ Order Updated', 'Changes saved successfully.');
+    } catch (e: any) {
+      Alert.alert('Update Error', e.message);
+    }
+  };
+
   // ── Deep Scan ────────────────────────────────────────────────────────────
   const handleRunAgent = async () => {
     const user = auth.currentUser;
@@ -417,10 +592,34 @@ export const CustomerBrainScreen: React.FC = () => {
   // ── Approve ──────────────────────────────────────────────────────────────
   const handleApprove = async (order: DetectedOrder) => {
     try {
-      const ITEM_TO_PRODUCT: Record<string, number> = {
-        Milk: 1, Wire: 2, 'Copper Wire': 2, Pipe: 3, Bread: 4,
-      };
-      const productId = ITEM_TO_PRODUCT[order.item] || 1;
+      // Dynamically match the item name against actual database products
+      let productId: string | number = 1;
+      try {
+        const dbProducts = await ApiService.getProducts();
+        const normalizedOrderItem = order.item.toLowerCase().trim();
+        const matchedProduct = dbProducts.find(
+          (p: any) =>
+            p.name.toLowerCase().trim() === normalizedOrderItem ||
+            (p.sku && p.sku.toLowerCase().trim() === normalizedOrderItem)
+        );
+        if (matchedProduct) {
+          productId = matchedProduct.id;
+        } else {
+          const partialMatch = dbProducts.find(
+            (p: any) =>
+              p.name.toLowerCase().includes(normalizedOrderItem) ||
+              normalizedOrderItem.includes(p.name.toLowerCase())
+          );
+          if (partialMatch) {
+            productId = partialMatch.id;
+          } else if (dbProducts.length > 0) {
+            productId = dbProducts[0].id;
+          }
+        }
+      } catch (prodErr) {
+        console.warn('Failed to fetch products for dynamic mapping, using default ID 1', prodErr);
+      }
+
       const txType = order.type === 'SALE' ? 'sale' : 'restock';
 
       await ApiService.recordTransaction(txType, {
@@ -731,6 +930,7 @@ export const CustomerBrainScreen: React.FC = () => {
               index={i}
               onApprove={() => handleApprove(order)}
               onReject={() => handleReject(order)}
+              onSave={(updated) => handleSave(order, updated)}
             />
           ))}
         </View>
@@ -752,6 +952,7 @@ export const CustomerBrainScreen: React.FC = () => {
               index={i}
               onApprove={() => handleApprove(order)}
               onReject={() => handleReject(order)}
+              onSave={(updated) => handleSave(order, updated)}
             />
           ))}
         </View>
@@ -919,4 +1120,65 @@ const styles = StyleSheet.create({
   loadingPersistedText: { color: Theme.colors.textMuted, fontSize: 13 },
   lastScanBanner: { borderRadius: Theme.borderRadius.md, borderWidth: 1, borderColor: 'rgba(0,176,255,0.2)', padding: Theme.spacing.md, marginBottom: Theme.spacing.md, overflow: 'hidden' },
   lastScanBannerText: { color: '#00B0FF', fontSize: 12, lineHeight: 18 },
+
+  editFieldsContainer: {
+    padding: Theme.spacing.sm,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    borderRadius: Theme.borderRadius.md,
+    marginBottom: Theme.spacing.sm,
+  },
+  editFieldRow: {
+    marginBottom: 10,
+  },
+  editFieldRowGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  editFieldLabel: {
+    color: Theme.colors.primary,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  cardInput: {
+    height: 40,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+    borderRadius: Theme.borderRadius.sm,
+    paddingHorizontal: Theme.spacing.sm,
+    color: '#FFF',
+    fontSize: 14,
+  },
+  editBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: Theme.borderRadius.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+  },
+  editBtnText: {
+    color: Theme.colors.text,
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  typeSelectBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+  },
+  typeSelectBtnText: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: Theme.colors.textMuted,
+  },
 });

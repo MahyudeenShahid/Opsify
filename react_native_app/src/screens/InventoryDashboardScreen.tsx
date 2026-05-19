@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View, ScrollView, ActivityIndicator, Alert, Animated, Linking } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { Download, RefreshCw, LayoutDashboard, Package, FileText, ShoppingCart, Activity } from 'lucide-react-native';
+import { Download, RefreshCw, LayoutDashboard, Package, FileText, ShoppingCart, Activity, Warehouse } from 'lucide-react-native';
 
 import { Theme } from '../core/theme';
 import { ApiService } from '../services/api';
@@ -9,14 +9,16 @@ import { OverviewDashboard } from '../components/inventory/OverviewDashboard';
 import { ProductManager } from '../components/inventory/ProductManager';
 import { OrderManager } from '../components/inventory/OrderManager';
 import { ActivityLogViewer } from '../components/inventory/ActivityLogViewer';
+import { WarehouseManager } from '../components/inventory/WarehouseManager';
 
 // Removed: SalesManager, SupplierManager (Suppliers are in Agent tab, Sales are in Activity log)
-type SubTab = 'overview' | 'stock' | 'orders' | 'activity';
+type SubTab = 'overview' | 'stock' | 'orders' | 'warehouses' | 'activity';
 
 const TABS: { id: SubTab; label: string; icon: any }[] = [
   { id: 'overview',  label: 'Overview',  icon: LayoutDashboard },
   { id: 'stock',     label: 'Stock',     icon: Package },
   { id: 'orders',    label: 'Orders',    icon: ShoppingCart },
+  { id: 'warehouses',label: 'Warehouses',icon: Warehouse },
   { id: 'activity',  label: 'Activity',  icon: Activity },
 ];
 
@@ -157,6 +159,12 @@ export const InventoryDashboardScreen: React.FC = () => {
                 <OrderManager
                   orders={orders}
                   inventory={inventory}
+                  warehouses={warehouses}
+                  onRefresh={fetchData}
+                />
+              )}
+              {activeTab === 'warehouses' && (
+                <WarehouseManager
                   warehouses={warehouses}
                   onRefresh={fetchData}
                 />

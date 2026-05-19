@@ -3,7 +3,7 @@ import os
 import base64
 from typing import Optional, List, Any
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header
 
 from orchestrator.graph import AntigravityGraph
 from tools.database import get_all_providers, query_mock_provider_db as _search_providers
@@ -18,6 +18,7 @@ from agents.chat_scan_agent import (
     save_pending_orders,
     load_pending_orders,
     delete_pending_order,
+    update_pending_order,
     delete_scan_session,
     clear_all_scan_sessions,
     delete_scan_cursor,
@@ -295,6 +296,29 @@ def api_delete_pending_order_endpoint(fingerprint: str, x_user_id: Optional[str]
         user_id = _uid(x_user_id)
         delete_pending_order(user_id, fingerprint)
         return {"status": "ok", "deleted": fingerprint}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class UpdatePendingOrderRequest(BaseModel):
+    item: str
+    quantity: float
+    value: float
+    warehouse_id: int
+    type: str
+
+
+@router.put("/api/agents/pending-orders/{fingerprint}")
+def api_update_pending_order_endpoint(
+    fingerprint: str,
+    req: UpdatePendingOrderRequest,
+    x_user_id: Optional[str] = Header(None)
+):
+    """Update details of a pending order in Firestore before booking."""
+    try:
+        user_id = _uid(x_user_id)
+        update_pending_order(user_id, fingerprint, req.dict())
+        return {"status": "ok"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

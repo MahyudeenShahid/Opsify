@@ -97,6 +97,18 @@ def delete_pending_order(user_id: str, fingerprint: str) -> None:
         print(f"[PendingOrders] delete error: {e}")
 
 
+def update_pending_order(user_id: str, fingerprint: str, updates: Dict[str, Any]) -> None:
+    """Update details of a pending order in Firestore."""
+    db = _firestore_db()
+    if not db:
+        return
+    try:
+        ref = db.collection("users").document(user_id).collection(PENDING_ORDERS_COLLECTION).document(fingerprint)
+        ref.update(updates)
+    except Exception as e:
+        print(f"[PendingOrders] update error: {e}")
+
+
 def clear_all_pending_orders(user_id: str) -> None:
     """Wipe all pending orders (e.g. on a fresh full scan)."""
     db = _firestore_db()

@@ -74,7 +74,9 @@ export const ChatRoomScreen = ({ chatId, currentUserId, otherUser, onBack }: { c
           placeholderTextColor={Theme.colors.textMuted}
           value={inputText}
           onChangeText={setInputText}
-          multiline
+          onSubmitEditing={handleSend}
+          returnKeyType="send"
+          blurOnSubmit={false}
         />
         <TouchableOpacity 
           style={[styles.sendButton, !inputText.trim() && { opacity: 0.5 }]} 

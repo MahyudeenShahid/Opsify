@@ -23,12 +23,14 @@ export const ERPAgentScreen: React.FC = () => {
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [profitData, setProfitData] = useState<any>(null);
   const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
   const [expandedItem, setExpandedItem] = useState<number | null>(null);
   const [searchingFor, setSearchingFor] = useState<number | null>(null);
   const [searchResults, setSearchResults] = useState<Record<number, any[]>>({});
   const [addedVendors, setAddedVendors] = useState<Set<string>>(new Set());
   const [scoutLocation, setScoutLocation] = useState('Karachi');
-  const [activeSection, setActiveSection] = useState<'alerts' | 'profit' | 'suppliers'>('alerts');
+  const [activeSection, setActiveSection] = useState<'alerts' | 'profit' | 'suppliers' | 'warehouses'>('alerts');
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const headerAnim = useRef(new Animated.Value(0)).current;
@@ -50,14 +52,18 @@ export const ERPAgentScreen: React.FC = () => {
   const runScan = async () => {
     setIsScanning(true);
     try {
-      const [suggs, profit, sups] = await Promise.all([
+      const [suggs, profit, sups, whs, prods] = await Promise.all([
         ApiService.getReorderSuggestions(),
         ApiService.getProfitSummary().catch(() => null),
         ApiService.getSuppliers(),
+        ApiService.getWarehouses(),
+        ApiService.getProducts(),
       ]);
       setSuggestions(suggs);
       setProfitData(profit);
       setSuppliers(sups);
+      setWarehouses(whs);
+      setProducts(prods);
     } catch (e: any) {
       Alert.alert('Scan Error', e.message);
     } finally {
@@ -175,13 +181,14 @@ export const ERPAgentScreen: React.FC = () => {
           { id: 'alerts', label: '🚨 Alerts', count: suggestions.length },
           { id: 'profit', label: '💰 Profit', count: null },
           { id: 'suppliers', label: '🤝 Suppliers', count: suppliers.length },
+          { id: 'warehouses', label: '🏢 Warehouses', count: warehouses.length },
         ] as const).map(s => (
           <TouchableOpacity
             key={s.id}
             style={[styles.toggleBtn, activeSection === s.id && styles.toggleBtnActive]}
             onPress={() => setActiveSection(s.id)}
           >
-            <Text style={[styles.toggleText, activeSection === s.id && styles.toggleTextActive]}>
+            <Text style={[styles.toggleText, activeSection === s.id && styles.toggleTextActive]} numberOfLines={1}>
               {s.label}{s.count !== null ? ` (${s.count})` : ''}
             </Text>
           </TouchableOpacity>
@@ -452,6 +459,75 @@ export const ERPAgentScreen: React.FC = () => {
                 </View>
               </View>
             ))}
+          </View>
+        )}
+
+        {/* ─── WAREHOUSES SECTION ───────────────────────────── */}
+        {activeSection === 'warehouses' && (
+          <View>
+            <View style={styles.supplierHeader}>
+              <Text style={styles.sectionTitle}>Warehouse Locations ({warehouses.length})</Text>
+            </View>
+
+            {warehouses.length === 0 && (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyIcon}>🏢</Text>
+                <Text style={styles.emptyText}>No warehouses configured.</Text>
+              </View>
+            )}
+
+            {warehouses.map((wh) => {
+              // Find products in this warehouse
+              const whProducts = products.filter(p => String(p.warehouse_id) === String(wh.id));
+              
+              return (
+                <View key={wh.id} style={styles.supplierCard}>
+                  <LinearGradient colors={['rgba(33,150,243,0.08)', 'rgba(17,22,34,0.95)']} style={StyleSheet.absoluteFill} />
+                  
+                  <View style={styles.supplierCardTop}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.supplierName}>{wh.name}</Text>
+                      <Text style={styles.supplierContact}>📍 {wh.location || 'Unknown Location'}</Text>
+                    </View>
+                    <View style={styles.ratingPill}>
+                      <Text style={styles.ratingPillText}>WH #{wh.id}</Text>
+                    </View>
+                  </View>
+
+                  <View style={{ marginTop: 10, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)', paddingTop: 10 }}>
+                    <Text style={{ color: Theme.colors.primary, fontSize: 11, fontWeight: '800', letterSpacing: 0.5, marginBottom: 8 }}>
+                      STOCKED PRODUCTS ({whProducts.length})
+                    </Text>
+
+                    {whProducts.length === 0 ? (
+                      <Text style={{ color: Theme.colors.textMuted, fontSize: 11, fontStyle: 'italic' }}>
+                        No stock currently recorded in this location.
+                      </Text>
+                    ) : (
+                      whProducts.map((p, pIdx) => {
+                        const isLowStock = parseFloat(p.stock) <= parseFloat(p.reorder_threshold);
+                        return (
+                          <View key={`${wh.id}-${p.id || p.sku}-${pIdx}`} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6, borderBottomWidth: pIdx < whProducts.length - 1 ? 1 : 0, borderBottomColor: 'rgba(255,255,255,0.03)' }}>
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>{p.name}</Text>
+                              <Text style={{ color: Theme.colors.textMuted, fontSize: 10 }}>Variant: {p.variant || 'N/A'} · SKU: {p.sku || 'N/A'}</Text>
+                            </View>
+                            <View style={{ alignItems: 'flex-end' }}>
+                              <Text style={{ color: isLowStock ? Theme.colors.error : Theme.colors.primary, fontSize: 13, fontWeight: '900' }}>
+                                {p.stock} {p.unit || 'units'}
+                              </Text>
+                              <Text style={{ color: Theme.colors.textMuted, fontSize: 9 }}>
+                                Min: {p.reorder_threshold}
+                              </Text>
+                            </View>
+                          </View>
+                        );
+                      })
+                    )}
+                  </View>
+                </View>
+              );
+            })}
           </View>
         )}
 

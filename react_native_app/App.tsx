@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   SafeAreaView, StatusBar, StyleSheet, Text, View,
-  TouchableOpacity, Animated, Easing,
+  TouchableOpacity, Animated, Easing, Modal,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { BrainCircuit, Boxes, MessageCircle, Navigation, Bot, TrendingUp, Settings } from 'lucide-react-native';
+import { BrainCircuit, Boxes, MessageCircle, Navigation, Bot, TrendingUp, Settings, Eye, EyeOff } from 'lucide-react-native';
 
 import { Theme } from './src/core/theme';
 import { CustomerBrainScreen } from './src/screens/CustomerBrainScreen';
@@ -61,6 +61,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isFloatingBotHidden, setIsFloatingBotHidden] = useState(false);
 
   const fadeAnim  = useRef(new Animated.Value(1)).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -213,6 +215,62 @@ export default function App() {
           />
         </BlurView>
       </View>
+
+      {/* Floating Chatbot Overlay / Button */}
+      {activeTab !== 'opsbot' && (
+        <>
+          {activeTab === 'omnichat' ? (
+            !isFloatingBotHidden ? (
+              <>
+                <TouchableOpacity
+                  style={styles.floatingChatButton}
+                  onPress={() => setIsChatOpen(true)}
+                  activeOpacity={0.8}
+                >
+                  <Bot size={26} color={Theme.colors.background} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.floatingChatHideButton}
+                  onPress={() => setIsFloatingBotHidden(true)}
+                  activeOpacity={0.8}
+                >
+                  <EyeOff size={16} color={Theme.colors.textMuted} />
+                </TouchableOpacity>
+              </>
+            ) : (
+              <TouchableOpacity
+                style={styles.floatingChatShowButton}
+                onPress={() => setIsFloatingBotHidden(false)}
+                activeOpacity={0.8}
+              >
+                <Eye size={18} color={Theme.colors.primary} />
+              </TouchableOpacity>
+            )
+          ) : (
+            <TouchableOpacity
+              style={styles.floatingChatButton}
+              onPress={() => setIsChatOpen(true)}
+              activeOpacity={0.8}
+            >
+              <Bot size={26} color={Theme.colors.background} />
+            </TouchableOpacity>
+          )}
+        </>
+      )}
+
+      {/* Floating Chatbot Modal Overlay */}
+      <Modal
+        visible={isChatOpen}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsChatOpen(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <BlurView intensity={90} tint="dark" style={styles.modalContent}>
+            <ChatScreen onClose={() => setIsChatOpen(false)} currentUserId={user?.uid} />
+          </BlurView>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -267,4 +325,70 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
   },
   navBadgeText: { color: '#FFF', fontSize: 9, fontWeight: '900' },
+  floatingChatButton: {
+    position: 'absolute',
+    bottom: 105,
+    right: 20,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: Theme.colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: Theme.colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    zIndex: 999,
+  },
+  floatingChatHideButton: {
+    position: 'absolute',
+    bottom: 111,
+    right: 80,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(30, 35, 55, 0.95)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+    zIndex: 999,
+  },
+  floatingChatShowButton: {
+    position: 'absolute',
+    bottom: 105,
+    right: 20,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(30, 35, 55, 0.95)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Theme.colors.primary,
+    zIndex: 999,
+    shadowColor: Theme.colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    width: '100%',
+    height: '92%',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+  },
 });

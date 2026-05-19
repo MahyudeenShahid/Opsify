@@ -216,6 +216,16 @@ export const ApiService = {
     return response.json();
   },
 
+  async updatePendingOrder(fingerprint: string, data: { item: string; quantity: number; value: number; warehouse_id: number; type: string }): Promise<any> {
+    const response = await fetch(`${BASE_URL}/agents/pending-orders/${fingerprint}`, {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error('Failed to update pending order');
+    return response.json();
+  },
+
   async deleteScanSession(sessionId: string): Promise<any> {
     const response = await fetch(`${BASE_URL}/agents/scan-sessions/${sessionId}`, {
       method: 'DELETE',

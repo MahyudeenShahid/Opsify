@@ -421,8 +421,8 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onClose, currentUserId }
           value={inputText}
           onChangeText={setInputText}
           onSubmitEditing={() => sendMessage()}
-          multiline
           returnKeyType="send"
+          blurOnSubmit={false}
         />
         <TouchableOpacity
           style={[styles.sendBtn, (!inputText.trim() || isLoading) && styles.sendBtnDisabled]}
