@@ -2,28 +2,28 @@ import { Platform } from 'react-native';
 
 export const Theme = {
   colors: {
-    background: '#0B0D14', // Deepest Void
-    surface: '#151828',    // Elevated Carbon
-    surfaceLight: '#1E2337', // Hover/Active states
+    background: '#070A0E', // Deep Soil Black
+    surface: '#111622',    // Dark Foliage Carbon
+    surfaceLight: '#1A2234', // Hover/Active states
     border: 'rgba(255, 255, 255, 0.08)',
-    primary: '#00F0FF',    // Cyber Cyan
-    primaryGlow: 'rgba(0, 240, 255, 0.2)',
-    secondary: '#7000FF',  // Deep Neon Purple
-    success: '#00FFA3',    // Electric Green
-    successGlow: 'rgba(0, 255, 163, 0.2)',
-    warning: '#FFB800',    // Sun Yellow
-    error: '#FF2A55',      // Crimson Red
+    primary: '#00E676',    // Organic Farm Green
+    primaryGlow: 'rgba(0, 230, 118, 0.2)',
+    secondary: '#FFC400',  // Mango Gold
+    success: '#00E676',    // Electric Salad Green
+    successGlow: 'rgba(0, 230, 118, 0.2)',
+    warning: '#FF9100',    // Sunset Amber
+    error: '#FF2A55',      // Tomato Red
     text: '#FFFFFF',
-    textMuted: '#8A91AB',
-    terminalBg: '#05060A',
-    terminalBorder: '#1A2F3D',
-    glass: 'rgba(21, 24, 40, 0.65)',
+    textMuted: '#8E9AA8',
+    terminalBg: '#05070C',
+    terminalBorder: '#1A2D20',
+    glass: 'rgba(17, 22, 34, 0.7)',
   },
   gradients: {
-    primary: ['#00F0FF', '#0080FF'] as const,
-    secondary: ['#7000FF', '#B000FF'] as const,
-    success: ['#00FFA3', '#00A3FF'] as const,
-    surface: ['rgba(30, 35, 55, 0.9)', 'rgba(20, 24, 40, 0.9)'] as const,
+    primary: ['#00E676', '#00B0FF'] as const,
+    secondary: ['#FFC400', '#FF9100'] as const,
+    success: ['#00E676', '#FFC400'] as const,
+    surface: ['rgba(26, 34, 52, 0.9)', 'rgba(17, 22, 34, 0.9)'] as const,
   },
   spacing: {
     xs: 4,

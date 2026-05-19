@@ -18,11 +18,11 @@ const { width } = Dimensions.get('window');
 const JOB_STATES = ['DISPATCHED', 'EN_ROUTE', 'ARRIVED', 'JOB_STARTED', 'JOB_COMPLETED'];
 
 const STATE_META: Record<string, { icon: any; color: string; label: string }> = {
-  DISPATCHED:    { icon: Radio,       color: '#7000FF', label: 'Rider Dispatched'  },
-  EN_ROUTE:      { icon: Truck,       color: '#00F0FF', label: 'En Route'          },
-  ARRIVED:       { icon: MapPin,      color: '#FFB800', label: 'Arrived On-Site'   },
-  JOB_STARTED:   { icon: Zap,         color: '#FF6B35', label: 'Job In Progress'   },
-  JOB_COMPLETED: { icon: CheckCircle, color: '#00FFA3', label: 'Completed ✓'       },
+  DISPATCHED: { icon: Radio, color: '#7000FF', label: 'Rider Dispatched' },
+  EN_ROUTE: { icon: Truck, color: '#00F0FF', label: 'En Route' },
+  ARRIVED: { icon: MapPin, color: '#FFB800', label: 'Arrived On-Site' },
+  JOB_STARTED: { icon: Zap, color: '#FF6B35', label: 'Job In Progress' },
+  JOB_COMPLETED: { icon: CheckCircle, color: '#00FFA3', label: 'Completed ✓' },
 };
 
 const ZONE_PRESETS = ['Gulshan', 'Clifton', 'DHA', 'Saddar', 'PECHS', 'Nazimabad'];
@@ -78,19 +78,19 @@ const StatePipeline: React.FC<{ currentStatus: string }> = ({ currentStatus }) =
 };
 
 const pipeline = StyleSheet.create({
-  container:   { paddingVertical: Theme.spacing.md },
-  track:       { height: 3, backgroundColor: Theme.colors.border, marginHorizontal: Theme.spacing.xl, borderRadius: 9999, overflow: 'hidden', marginBottom: -1.5 },
-  fill:        { height: '100%', borderRadius: 9999, overflow: 'hidden' },
-  nodesRow:    { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: Theme.spacing.sm },
-  node:        { alignItems: 'center', flex: 1 },
-  nodeCircle:  { width: 34, height: 34, borderRadius: 17, borderWidth: 1.5, borderColor: Theme.colors.border, backgroundColor: Theme.colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
+  container: { paddingVertical: Theme.spacing.md },
+  track: { height: 3, backgroundColor: Theme.colors.border, marginHorizontal: Theme.spacing.xl, borderRadius: 9999, overflow: 'hidden', marginBottom: -1.5 },
+  fill: { height: '100%', borderRadius: 9999, overflow: 'hidden' },
+  nodesRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: Theme.spacing.sm },
+  node: { alignItems: 'center', flex: 1 },
+  nodeCircle: { width: 34, height: 34, borderRadius: 17, borderWidth: 1.5, borderColor: Theme.colors.border, backgroundColor: Theme.colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
   currentNode: { shadowOpacity: 0.6, shadowRadius: 10, shadowOffset: { width: 0, height: 0 }, elevation: 8 },
-  nodeLabel:   { fontSize: 8.5, fontWeight: '700', color: Theme.colors.textMuted, textAlign: 'center', letterSpacing: 0.2 },
+  nodeLabel: { fontSize: 8.5, fontWeight: '700', color: Theme.colors.textMuted, textAlign: 'center', letterSpacing: 0.2 },
 });
 
 // ─── Rider Geolocation MiniMap ──────────────────────────────────────────────
 const RiderMiniMap: React.FC<{ job: any }> = ({ job }) => {
-  const [mapMode, setMapMode] = useState<'vector' | 'google'>(Platform.OS === 'web' ? 'google' : 'vector');
+  const [mapMode, setMapMode] = useState<'vector' | 'google' | 'osm'>(Platform.OS === 'web' ? 'osm' : 'vector');
   const route = job.route || {};
   const origin = route.origin || { lat: 24.8138, lng: 67.0366 };
   const dest = route.destination || { lat: 24.8155, lng: 67.0327 };
@@ -130,6 +130,11 @@ const RiderMiniMap: React.FC<{ job: any }> = ({ job }) => {
     Linking.openURL(url).catch(err => console.error("Failed to open maps", err));
   };
 
+  const getMapUrl = () => {
+    const host = Platform.OS === 'web' ? `${window.location.hostname}:8000` : 'localhost:8000';
+    return `http://${host}/api/map/render?lat1=${origin.lat}&lng1=${origin.lng}&lat2=${dest.lat}&lng2=${dest.lng}`;
+  };
+
   return (
     <View style={styles.mapWrapper}>
       <View style={styles.mapHeaderRow}>
@@ -137,14 +142,20 @@ const RiderMiniMap: React.FC<{ job: any }> = ({ job }) => {
           <Text style={styles.mapLabel}>🛰️ GEOLOCATION COMMAND</Text>
           {Platform.OS === 'web' && (
             <View style={styles.mapToggleContainer}>
-              <TouchableOpacity 
-                style={[styles.mapToggleBtn, mapMode === 'google' && styles.mapToggleBtnActive]} 
+              <TouchableOpacity
+                style={[styles.mapToggleBtn, mapMode === 'osm' && styles.mapToggleBtnActive]}
+                onPress={() => setMapMode('osm')}
+              >
+                <Text style={[styles.mapToggleText, mapMode === 'osm' && styles.mapToggleTextActive]}>OSM Map</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.mapToggleBtn, mapMode === 'google' && styles.mapToggleBtnActive]}
                 onPress={() => setMapMode('google')}
               >
                 <Text style={[styles.mapToggleText, mapMode === 'google' && styles.mapToggleTextActive]}>Google Map</Text>
               </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.mapToggleBtn, mapMode === 'vector' && styles.mapToggleBtnActive]} 
+              <TouchableOpacity
+                style={[styles.mapToggleBtn, mapMode === 'vector' && styles.mapToggleBtnActive]}
                 onPress={() => setMapMode('vector')}
               >
                 <Text style={[styles.mapToggleText, mapMode === 'vector' && styles.mapToggleTextActive]}>Vector Grid</Text>
@@ -153,17 +164,33 @@ const RiderMiniMap: React.FC<{ job: any }> = ({ job }) => {
           )}
         </View>
         <Text style={styles.mapSubLabel}>
-          {mapMode === 'google' ? 'Google Embed' : (route.source || 'Haversine Engine')}
+          {mapMode === 'google' ? 'Google Embed' : mapMode === 'osm' ? 'OSM Interactive' : (route.source || 'Haversine Engine')}
         </Text>
       </View>
 
-      {mapMode === 'google' && Platform.OS === 'web' ? (
+      {mapMode === 'osm' && Platform.OS === 'web' ? (
+        <View style={{ height: 220, width: '100%', overflow: 'hidden', borderRadius: Theme.borderRadius.md, borderWidth: 1, borderColor: Theme.colors.border }}>
+          <iframe
+            style={{
+              border: 0,
+              backgroundColor: '#070A0E',
+              width: '100%',
+              height: 220,
+            }}
+            loading="lazy"
+            src={getMapUrl()}
+          />
+        </View>
+      ) : mapMode === 'google' && Platform.OS === 'web' ? (
         <View style={{ height: 220, width: '100%', overflow: 'hidden' }}>
           {MAPS_KEY ? (
             <iframe
-              width="100%"
-              height="220"
-              style={{ border: 0, backgroundColor: '#0A0B10' }}
+              style={{
+                border: 0,
+                backgroundColor: '#0A0B10',
+                width: '100%',
+                height: 220
+              }}
               loading="lazy"
               allowFullScreen
               referrerPolicy="no-referrer-when-downgrade"
@@ -188,7 +215,7 @@ const RiderMiniMap: React.FC<{ job: any }> = ({ job }) => {
             <Line x1="150" y1="0" x2="150" y2="120" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
             <Line x1="200" y1="0" x2="200" y2="120" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
             <Line x1="250" y1="0" x2="250" y2="120" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
-            
+
             <Line x1="0" y1="30" x2="300" y2="30" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
             <Line x1="0" y1="60" x2="300" y2="60" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
             <Line x1="0" y1="90" x2="300" y2="90" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
@@ -221,7 +248,7 @@ const RiderMiniMap: React.FC<{ job: any }> = ({ job }) => {
               <SvgText x={rx - 12} y={ry - 8} fill={Theme.colors.warning} fontSize="7" fontWeight="bold">RIDER</SvgText>
             </G>
           </Svg>
-          
+
           {Platform.OS !== 'web' && (
             <TouchableOpacity style={styles.nativeMapBtn} onPress={openNativeMap}>
               <Text style={styles.nativeMapBtnText}>🗺️ Open Live Google Maps Navigation</Text>
@@ -234,7 +261,13 @@ const RiderMiniMap: React.FC<{ job: any }> = ({ job }) => {
 };
 
 // ─── Job Card ────────────────────────────────────────────────────────────────
-const JobCard: React.FC<{ job: any; onAdvance: () => void; isAdvancing: boolean }> = ({ job, onAdvance, isAdvancing }) => {
+const JobCard: React.FC<{
+  job: any;
+  onAdvance: () => void;
+  isAdvancing: boolean;
+  petrolPrice?: number;
+  surchargePerKm?: number;
+}> = ({ job, onAdvance, isAdvancing, petrolPrice = 409.78, surchargePerKm = 27.32 }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(24)).current;
 
@@ -296,6 +329,36 @@ const JobCard: React.FC<{ job: any; onAdvance: () => void; isAdvancing: boolean 
         </View>
       </View>
 
+      {/* Dynamic Petrol Pricing Engine */}
+      <View style={{
+        marginTop: 12,
+        backgroundColor: 'rgba(255, 196, 0, 0.05)',
+        borderColor: 'rgba(255, 196, 0, 0.15)',
+        borderWidth: 1,
+        borderRadius: Theme.borderRadius.md,
+        padding: Theme.spacing.sm,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center'
+      }}>
+        <View>
+          <Text style={{ color: Theme.colors.secondary, fontSize: 9, fontWeight: '900', letterSpacing: 0.5 }}>
+            ⛽ DYNAMIC FUEL SURCHARGE (API SOURCED)
+          </Text>
+          <Text style={{ color: Theme.colors.textMuted, fontSize: 10, marginTop: 1 }}>
+            Index: Rs {petrolPrice.toFixed(2)}/L Petrol • Cost: Rs {surchargePerKm.toFixed(2)}/km
+          </Text>
+        </View>
+        <View style={{ alignItems: 'flex-end' }}>
+          <Text style={{ color: Theme.colors.primary, fontSize: 15, fontWeight: '900' }}>
+            Rs {Math.round(50 + (parseFloat(route.distance_km || 0) * surchargePerKm))}
+          </Text>
+          <Text style={{ color: Theme.colors.textMuted, fontSize: 8, fontWeight: '700' }}>
+            TOTAL DELIVERY PRICE
+          </Text>
+        </View>
+      </View>
+
       {/* Rider Info */}
       <View style={styles.riderRow}>
         <View style={styles.riderInfo}>
@@ -340,9 +403,9 @@ const JobCard: React.FC<{ job: any; onAdvance: () => void; isAdvancing: boolean 
           {isAdvancing
             ? <ActivityIndicator size="small" color="#000" />
             : <>
-                <Text style={styles.advanceBtnText}>ADVANCE STATE</Text>
-                <ChevronRight size={16} color="#000" />
-              </>
+              <Text style={styles.advanceBtnText}>ADVANCE STATE</Text>
+              <ChevronRight size={16} color="#000" />
+            </>
           }
         </TouchableOpacity>
       )}
@@ -355,6 +418,26 @@ export const LogisticsScreen: React.FC = () => {
   const [jobs, setJobs] = useState<any[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [advancingJobId, setAdvancingJobId] = useState<string | null>(null);
+
+  const [petrolPrice, setPetrolPrice] = useState(409.78);
+  const [surchargePerKm, setSurchargePerKm] = useState(27.32);
+
+  useEffect(() => {
+    const fetchPetrol = async () => {
+      try {
+        const host = Platform.OS === 'web' ? window.location.hostname : 'localhost';
+        const response = await fetch(`http://${host}:8000/api/petrol/price`);
+        const data = await response.json();
+        if (data.petrol_price) {
+          setPetrolPrice(data.petrol_price);
+          setSurchargePerKm(data.surcharge_per_km);
+        }
+      } catch (e) {
+        console.error("Failed to fetch live petrol price", e);
+      }
+    };
+    fetchPetrol();
+  }, []);
 
   // Dispatch form state
   const [orderId, setOrderId] = useState(`ORD-${Math.floor(Math.random() * 9000 + 1000)}`);
@@ -395,10 +478,10 @@ export const LogisticsScreen: React.FC = () => {
     setIsDispatching(true);
     try {
       const result = await ApiService.dispatchJob({
-        order_id:       orderId,
+        order_id: orderId,
         destination,
         item,
-        customer_name:  customerName,
+        customer_name: customerName,
         customer_phone: customerPhone,
       });
       const job = result.job;
@@ -503,9 +586,9 @@ export const LogisticsScreen: React.FC = () => {
               {isDispatching
                 ? <ActivityIndicator color="#000" />
                 : <>
-                    <Zap size={16} color="#000" style={{ marginRight: 8 }} />
-                    <Text style={styles.dispatchBtnText}>CALCULATE ROUTE & DISPATCH</Text>
-                  </>
+                  <Zap size={16} color="#000" style={{ marginRight: 8 }} />
+                  <Text style={styles.dispatchBtnText}>CALCULATE ROUTE & DISPATCH</Text>
+                </>
               }
             </TouchableOpacity>
           </View>
@@ -536,6 +619,8 @@ export const LogisticsScreen: React.FC = () => {
                 job={job}
                 onAdvance={() => handleAdvance(job.job_id)}
                 isAdvancing={advancingJobId === job.job_id}
+                petrolPrice={petrolPrice}
+                surchargePerKm={surchargePerKm}
               />
             ))
           )}
@@ -546,88 +631,88 @@ export const LogisticsScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  container:        { flex: 1, backgroundColor: 'transparent' },
-  header:           { paddingHorizontal: Theme.spacing.md, paddingTop: Theme.spacing.lg, paddingBottom: Theme.spacing.md },
-  headerTitle:      { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  title:            { color: Theme.colors.text, fontSize: 26, fontWeight: '900', letterSpacing: -0.5, marginLeft: 10 },
-  subtitle:         { color: Theme.colors.primary, fontSize: 12, textTransform: 'uppercase', letterSpacing: 2, marginLeft: 36 },
-  engineBadgeRow:   { flexDirection: 'row', marginLeft: 36, marginTop: Theme.spacing.sm, gap: 8 },
-  engineBadge:      { paddingHorizontal: 10, paddingVertical: 4, borderRadius: Theme.borderRadius.pill, borderWidth: 1, borderColor: Theme.colors.primary, backgroundColor: 'rgba(0,240,255,0.08)' },
-  engineBadgeText:  { fontSize: 10, fontWeight: '700', color: Theme.colors.primary },
-  scrollContent:    { paddingHorizontal: Theme.spacing.md, paddingBottom: Theme.spacing.xxl * 2 },
+  container: { flex: 1, backgroundColor: 'transparent' },
+  header: { paddingHorizontal: Theme.spacing.md, paddingTop: Theme.spacing.lg, paddingBottom: Theme.spacing.md },
+  headerTitle: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  title: { color: Theme.colors.text, fontSize: 26, fontWeight: '900', letterSpacing: -0.5, marginLeft: 10 },
+  subtitle: { color: Theme.colors.primary, fontSize: 12, textTransform: 'uppercase', letterSpacing: 2, marginLeft: 36 },
+  engineBadgeRow: { flexDirection: 'row', marginLeft: 36, marginTop: Theme.spacing.sm, gap: 8 },
+  engineBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: Theme.borderRadius.pill, borderWidth: 1, borderColor: Theme.colors.primary, backgroundColor: 'rgba(0,240,255,0.08)' },
+  engineBadgeText: { fontSize: 10, fontWeight: '700', color: Theme.colors.primary },
+  scrollContent: { paddingHorizontal: Theme.spacing.md, paddingBottom: Theme.spacing.xxl * 2 },
 
-  section:          { marginBottom: Theme.spacing.lg },
-  sectionTitle:     { color: Theme.colors.text, fontSize: 17, fontWeight: '800', marginBottom: Theme.spacing.md, letterSpacing: -0.3 },
+  section: { marginBottom: Theme.spacing.lg },
+  sectionTitle: { color: Theme.colors.text, fontSize: 17, fontWeight: '800', marginBottom: Theme.spacing.md, letterSpacing: -0.3 },
   sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Theme.spacing.md },
-  refreshBtn:       { width: 36, height: 36, borderRadius: Theme.borderRadius.pill, backgroundColor: Theme.colors.surface, borderWidth: 1, borderColor: Theme.colors.border, alignItems: 'center', justifyContent: 'center' },
+  refreshBtn: { width: 36, height: 36, borderRadius: Theme.borderRadius.pill, backgroundColor: Theme.colors.surface, borderWidth: 1, borderColor: Theme.colors.border, alignItems: 'center', justifyContent: 'center' },
 
   // Dispatch Form
-  dispatchCard:   { position: 'relative', borderRadius: Theme.borderRadius.lg, borderWidth: 1.5, borderColor: Theme.colors.border, padding: Theme.spacing.md, overflow: 'hidden', ...Theme.shadows.glass },
-  formGroup:      { marginBottom: Theme.spacing.md },
-  formLabel:      { color: Theme.colors.primary, fontSize: 10, fontWeight: '800', letterSpacing: 0.8, marginBottom: 6 },
-  formInput:      { height: 44, backgroundColor: Theme.colors.background, borderWidth: 1.5, borderColor: Theme.colors.border, borderRadius: Theme.borderRadius.md, paddingHorizontal: Theme.spacing.md, color: Theme.colors.text, fontSize: 14, marginTop: 4 },
-  inputRow:       { flexDirection: 'row', marginBottom: Theme.spacing.md },
-  zoneChipsRow:   { flexDirection: 'row', gap: 8 },
-  zoneChip:       { paddingHorizontal: 12, height: 36, borderRadius: Theme.borderRadius.pill, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', justifyContent: 'center', alignItems: 'center' },
+  dispatchCard: { position: 'relative', borderRadius: Theme.borderRadius.lg, borderWidth: 1.5, borderColor: Theme.colors.border, padding: Theme.spacing.md, overflow: 'hidden', ...Theme.shadows.glass },
+  formGroup: { marginBottom: Theme.spacing.md },
+  formLabel: { color: Theme.colors.primary, fontSize: 10, fontWeight: '800', letterSpacing: 0.8, marginBottom: 6 },
+  formInput: { height: 44, backgroundColor: Theme.colors.background, borderWidth: 1.5, borderColor: Theme.colors.border, borderRadius: Theme.borderRadius.md, paddingHorizontal: Theme.spacing.md, color: Theme.colors.text, fontSize: 14, marginTop: 4 },
+  inputRow: { flexDirection: 'row', marginBottom: Theme.spacing.md },
+  zoneChipsRow: { flexDirection: 'row', gap: 8 },
+  zoneChip: { paddingHorizontal: 12, height: 36, borderRadius: Theme.borderRadius.pill, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', justifyContent: 'center', alignItems: 'center' },
   activeZoneChip: { backgroundColor: 'rgba(0,240,255,0.1)', borderColor: Theme.colors.primary },
-  zoneChipText:   { color: Theme.colors.textMuted, fontSize: 13, fontWeight: '700' },
+  zoneChipText: { color: Theme.colors.textMuted, fontSize: 13, fontWeight: '700' },
   activeZoneChipText: { color: Theme.colors.primary },
-  dispatchBtn:    { height: 48, borderRadius: Theme.borderRadius.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  dispatchBtnText:{ color: '#000', fontWeight: '900', fontSize: 13, letterSpacing: 0.5 },
+  dispatchBtn: { height: 48, borderRadius: Theme.borderRadius.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  dispatchBtnText: { color: '#000', fontWeight: '900', fontSize: 13, letterSpacing: 0.5 },
 
   // Empty state
-  emptyState:   { alignItems: 'center', paddingVertical: Theme.spacing.xxl, backgroundColor: Theme.colors.surface, borderRadius: Theme.borderRadius.xl, borderWidth: 1, borderColor: Theme.colors.border, borderStyle: 'dashed' },
-  emptyText:    { color: Theme.colors.text, marginTop: 12, fontSize: 15, fontWeight: '700' },
+  emptyState: { alignItems: 'center', paddingVertical: Theme.spacing.xxl, backgroundColor: Theme.colors.surface, borderRadius: Theme.borderRadius.xl, borderWidth: 1, borderColor: Theme.colors.border, borderStyle: 'dashed' },
+  emptyText: { color: Theme.colors.text, marginTop: 12, fontSize: 15, fontWeight: '700' },
   emptySubText: { color: Theme.colors.textMuted, marginTop: 4, fontSize: 12 },
 
   // Job Card
-  jobCard:        { position: 'relative', borderRadius: Theme.borderRadius.lg, borderWidth: 1.5, borderColor: Theme.colors.border, padding: Theme.spacing.md, marginBottom: Theme.spacing.md, overflow: 'hidden', ...Theme.shadows.glass },
-  jobHeader:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: Theme.spacing.xs },
-  jobIdBlock:     {},
-  jobIdLabel:     { color: Theme.colors.textMuted, fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
-  jobIdText:      { color: Theme.colors.text, fontSize: 16, fontWeight: '900', letterSpacing: -0.3 },
-  statusBadge:    { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 5, borderRadius: Theme.borderRadius.pill, borderWidth: 1.5, gap: 5 },
-  statusBadgeText:{ fontSize: 11, fontWeight: '800' },
+  jobCard: { position: 'relative', borderRadius: Theme.borderRadius.lg, borderWidth: 1.5, borderColor: Theme.colors.border, padding: Theme.spacing.md, marginBottom: Theme.spacing.md, overflow: 'hidden', ...Theme.shadows.glass },
+  jobHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: Theme.spacing.xs },
+  jobIdBlock: {},
+  jobIdLabel: { color: Theme.colors.textMuted, fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
+  jobIdText: { color: Theme.colors.text, fontSize: 16, fontWeight: '900', letterSpacing: -0.3 },
+  statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 5, borderRadius: Theme.borderRadius.pill, borderWidth: 1.5, gap: 5 },
+  statusBadgeText: { fontSize: 11, fontWeight: '800' },
 
   // Rider MiniMap Styles
-  mapWrapper:     { marginBottom: Theme.spacing.md, backgroundColor: 'rgba(255,255,255,0.02)', borderWidth: 1.5, borderColor: Theme.colors.border, borderRadius: Theme.borderRadius.md, overflow: 'hidden' },
-  mapHeaderRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Theme.spacing.sm, paddingVertical: 6, backgroundColor: 'rgba(255,255,255,0.03)', borderBottomWidth: 1, borderBottomColor: Theme.colors.border },
-  mapLabel:       { color: Theme.colors.textMuted, fontSize: 8.5, fontWeight: '800', letterSpacing: 0.8 },
-  mapSubLabel:    { color: Theme.colors.primary, fontSize: 8.5, fontWeight: '700', letterSpacing: 0.2 },
-  mapCanvas:      { width: '100%', overflow: 'hidden' },
+  mapWrapper: { marginBottom: Theme.spacing.md, backgroundColor: 'rgba(255,255,255,0.02)', borderWidth: 1.5, borderColor: Theme.colors.border, borderRadius: Theme.borderRadius.md, overflow: 'hidden' },
+  mapHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Theme.spacing.sm, paddingVertical: 6, backgroundColor: 'rgba(255,255,255,0.03)', borderBottomWidth: 1, borderBottomColor: Theme.colors.border },
+  mapLabel: { color: Theme.colors.textMuted, fontSize: 8.5, fontWeight: '800', letterSpacing: 0.8 },
+  mapSubLabel: { color: Theme.colors.primary, fontSize: 8.5, fontWeight: '700', letterSpacing: 0.2 },
+  mapCanvas: { width: '100%', overflow: 'hidden' },
 
   // Route Card
-  routeCard:      { position: 'relative', borderRadius: Theme.borderRadius.md, borderWidth: 1, borderColor: 'rgba(112,0,255,0.3)', padding: Theme.spacing.md, marginBottom: Theme.spacing.md, overflow: 'hidden' },
-  routeRow:       { flexDirection: 'row', justifyContent: 'space-around', zIndex: 1 },
-  routeStat:      { alignItems: 'center', flex: 1, gap: 4 },
+  routeCard: { position: 'relative', borderRadius: Theme.borderRadius.md, borderWidth: 1, borderColor: 'rgba(112,0,255,0.3)', padding: Theme.spacing.md, marginBottom: Theme.spacing.md, overflow: 'hidden' },
+  routeRow: { flexDirection: 'row', justifyContent: 'space-around', zIndex: 1 },
+  routeStat: { alignItems: 'center', flex: 1, gap: 4 },
   routeStatLabel: { color: Theme.colors.textMuted, fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
   routeStatValue: { color: Theme.colors.text, fontSize: 16, fontWeight: '900' },
-  routeDivider:   { width: 1, backgroundColor: Theme.colors.border },
+  routeDivider: { width: 1, backgroundColor: Theme.colors.border },
 
   // Rider
-  riderRow:       { flexDirection: 'column', gap: 4, marginBottom: Theme.spacing.md, backgroundColor: 'rgba(0,0,0,0.2)', padding: Theme.spacing.sm, borderRadius: Theme.borderRadius.md },
-  riderInfo:      { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  riderText:      { color: Theme.colors.text, fontSize: 13, fontWeight: '700' },
-  riderVehicle:   { color: Theme.colors.textMuted, fontSize: 12 },
+  riderRow: { flexDirection: 'column', gap: 4, marginBottom: Theme.spacing.md, backgroundColor: 'rgba(0,0,0,0.2)', padding: Theme.spacing.sm, borderRadius: Theme.borderRadius.md },
+  riderInfo: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  riderText: { color: Theme.colors.text, fontSize: 13, fontWeight: '700' },
+  riderVehicle: { color: Theme.colors.textMuted, fontSize: 12 },
 
   // Order meta
-  orderMetaRow:   { flexDirection: 'row', justifyContent: 'space-between', marginBottom: Theme.spacing.md },
-  orderMetaItem:  { flex: 1 },
+  orderMetaRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: Theme.spacing.md },
+  orderMetaItem: { flex: 1 },
   orderMetaLabel: { color: Theme.colors.textMuted, fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
   orderMetaValue: { color: Theme.colors.text, fontSize: 13, fontWeight: '800', marginTop: 2 },
 
   // Advance button
-  advanceBtn:     { height: 44, borderRadius: Theme.borderRadius.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  advanceBtn: { height: 44, borderRadius: Theme.borderRadius.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   advanceBtnText: { color: '#000', fontWeight: '900', fontSize: 12, letterSpacing: 0.5, marginRight: 4 },
 
   // Interactive Maps Toggles
   mapToggleContainer: { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: Theme.borderRadius.sm, padding: 2, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
-  mapToggleBtn:       { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4 },
+  mapToggleBtn: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4 },
   mapToggleBtnActive: { backgroundColor: Theme.colors.primary },
-  mapToggleText:       { color: Theme.colors.textMuted, fontSize: 8.5, fontWeight: '700' },
+  mapToggleText: { color: Theme.colors.textMuted, fontSize: 8.5, fontWeight: '700' },
   mapToggleTextActive: { color: '#000' },
 
   // Native Client fallbacks
-  nativeMapBtn:     { margin: Theme.spacing.sm, height: 38, backgroundColor: 'rgba(0, 240, 255, 0.1)', borderWidth: 1.5, borderColor: Theme.colors.primary, borderRadius: Theme.borderRadius.md, justifyContent: 'center', alignItems: 'center' },
+  nativeMapBtn: { margin: Theme.spacing.sm, height: 38, backgroundColor: 'rgba(0, 240, 255, 0.1)', borderWidth: 1.5, borderColor: Theme.colors.primary, borderRadius: Theme.borderRadius.md, justifyContent: 'center', alignItems: 'center' },
   nativeMapBtnText: { color: Theme.colors.primary, fontWeight: '900', fontSize: 11, letterSpacing: 0.3 },
 });

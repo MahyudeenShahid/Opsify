@@ -1,44 +1,24 @@
 import asyncio
 import os
-import random
 from dotenv import load_dotenv
 load_dotenv()  # Load .env file FIRST before any os.environ.get() calls
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request, Depends
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.security.api_key import APIKeyHeader
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Optional, List, Any
 
-from orchestrator.graph import AntigravityGraph
-from company_brain.graph import CompanyBrainGraph
 from broker.event_broker import broker
-
-from company_brain.inventory import (
-    init_db,
-    get_suppliers,
-    add_supplier,
-    add_product,
-    get_products,
-    record_sale,
-    record_restock,
-    record_adjustment,
-    get_transactions,
-    get_demand_predictions,
-    get_reorder_suggestions,
-    get_warehouses
-)
-from company_brain.inventory import get_warehouses as _get_warehouses
-import base64
-import io
-import csv
-from fastapi.responses import StreamingResponse
+from company_brain.inventory import init_db
+from company_brain.graph import CompanyBrainGraph
 
 app = FastAPI(title="Opsify AI Orchestrator API", version="2.0.0")
 
+# Initialize database tables
 init_db()
 
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -47,113 +27,50 @@ app.add_middleware(
     allow_headers=["*", "X-API-Key"],
 )
 
-customer_graph = AntigravityGraph()
-company_graph = CompanyBrainGraph()
-
-# ── API Key Authentication ────────────────────────────────────────────────────
+# ── API Key Authentication Middleware ─────────────────────────────────────────
 _OPSIFY_API_KEY = os.environ.get("OPSIFY_API_KEY", "")
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
-UNPROTECTED_PATHS = {"/", "/docs", "/redoc", "/openapi.json", "/ws/events"}
+# Paths exempt from authentication
+UNPROTECTED_PATHS = {"/", "/docs", "/redoc", "/openapi.json", "/ws/events", "/api/map/render", "/api/petrol/price"}
 
 @app.middleware("http")
 async def api_key_middleware(request: Request, call_next):
     """Require X-API-Key header on all non-public endpoints when OPSIFY_API_KEY is configured."""
     # Allow CORS preflight requests (OPTIONS method) and unprotected paths
-    if request.method == "OPTIONS" or not _OPSIFY_API_KEY or request.url.path in UNPROTECTED_PATHS or request.url.path.startswith("/docs"):
+    if request.method == "OPTIONS" or not _OPSIFY_API_KEY or request.url.path in UNPROTECTED_PATHS or "api/map/render" in request.url.path or "api/petrol/price" in request.url.path or request.url.path.startswith("/docs"):
         return await call_next(request)
     key = request.headers.get("X-API-Key", "")
     if key != _OPSIFY_API_KEY:
         return JSONResponse(status_code=403, content={"detail": "Invalid or missing X-API-Key header."})
     return await call_next(request)
 
-# ── Location → Warehouse routing map ────────────────────────────────────────
-# Maps customer zone keywords to the nearest Opsify warehouse ID.
-# Warehouse 1 = Alpha Depot (Karachi South/Central), 2 = Beta Hub (Lahore)
-_LOCATION_WAREHOUSE: dict = {
-    "clifton":      1, "dha":         1, "saddar":      1, "pechs":       1,
-    "gulshan":      1, "nazimabad":   1, "korangi":     1, "lyari":       1,
-    "north karachi":1, "malir":       1, "landhi":      1,
-    "lahore":       2, "johar town":  2, "dha lahore":  2, "gulberg":     2,
-}
 
-def _resolve_warehouse(location: str) -> int:
-    """Return the closest warehouse ID for a given location string."""
-    return _LOCATION_WAREHOUSE.get(location.lower().strip(), 1)
-
-
-class VoiceRequest(BaseModel):
-    audio_base64: str          # Base64-encoded audio bytes (WAV/OGG/MP3)
-    mime_type: str = "audio/wav"
-    language_hint: str = "en"  # "en", "ur", "roman_urdu"
-
-class OrderRequest(BaseModel):
-    message: str
-
-class OrderResponse(BaseModel):
-    execution_status: str
-    trace_logs: list[str]
-    intent: dict
-    provider: dict
-
+# ── Schemas ──────────────────────────────────────────────────────────────────
 class EventPayload(BaseModel):
     event_type: str
     payload: dict
 
-class SupplierRequest(BaseModel):
-    name: str
-    contact: str
-    rating: float
-    reliability_score: float
-    lead_time_days: int
 
-class ProductRequest(BaseModel):
-    sku: str
-    name: str
-    category: Optional[str] = ""
-    variant: Optional[str] = ""
-    unit: Optional[str] = "units"
-    cost_price: float
-    selling_price: float
-    supplier_id: Optional[int] = None
-    warehouse_id: Optional[int] = 1
-    initial_stock: Optional[float] = None
-    stock: Optional[float] = None
-    reorder_threshold: Optional[float] = 0.0
-
-class TransactionRequest(BaseModel):
-    product_id: int
-    warehouse_id: int
-    quantity: float
-    value: float
-
-class AdjustmentRequest(BaseModel):
-    product_id: int
-    warehouse_id: int
-    quantity_diff: float
-    reason: str
-
-class ProcurementApproveRequest(BaseModel):
-    product_id: int
-    warehouse_id: int
-    quantity: float
-    vendor: dict
-
+# ── Root Info Endpoint ────────────────────────────────────────────────────────
 @app.get("/")
 def read_root():
     return {"status": "Opsify Antigravity Engine is running."}
 
-# --- EVENT BROKER WEBSOCKETS ---
+
+# ── Event Broker & WebSockets ────────────────────────────────────────────────
 @app.websocket("/ws/events")
 async def websocket_endpoint(websocket: WebSocket):
     await broker.connect(websocket)
     try:
         while True:
-            await websocket.receive_text() # Keep connection alive
+            await websocket.receive_text()  # Keep connection alive
     except WebSocketDisconnect:
         broker.disconnect(websocket)
 
+
 async def auto_dispatch_s3(payload: dict):
+    """Helper to automatically trigger System 3 dispatch in the background."""
     try:
         from action_brain.riders import allocate_rider
         from action_brain.state_machine import create_job
@@ -194,13 +111,15 @@ async def auto_dispatch_s3(payload: dict):
             "message": f"Auto-dispatch exception: {str(e)}"
         })
 
+
 @app.post("/api/events/publish")
 async def publish_event(req: EventPayload):
+    """Publish arbitrary events externally and trigger autonomous listeners."""
     await broker.publish(req.event_type, "External", req.payload)
     
     # Autonomous Listener: If a customer order is booked, the Company Brain takes over.
     if req.event_type == "CUSTOMER_ORDER_BOOKED":
-        # Use model_dump_json() for Pydantic v2 compatibility (fallback to json() for v1)
+        company_graph = CompanyBrainGraph()
         try:
             payload_str = req.model_dump_json()
         except AttributeError:
@@ -215,549 +134,20 @@ async def publish_event(req: EventPayload):
         
     return {"status": "published"}
 
-# --- SYSTEM 1 (CUSTOMER BRAIN) ---
-@app.post("/api/orchestrate", response_model=OrderResponse)
-async def orchestrate_order(req: OrderRequest):
-    try:
-        final_state = customer_graph.run(req.message)
-        
-        if final_state["execution_status"] == "BOOKED":
-            intent = final_state.get("extracted_intent", {})
-            cat = intent.get("category", "")
-            
-            if cat in ["Milk", "Wire", "Pipe", "Bread"]:
-                qty_str = intent.get("quantity", "1")
-                try:
-                    qty = float(''.join(c for c in qty_str if c.isdigit() or c == '.'))
-                except ValueError:
-                    qty = 1.0
-                    
-                price = float(final_state["selected_provider"].get("price_per_hr", 150.0)) * qty
-                
-                # ── Smart warehouse routing: pick nearest depot to customer zone
-                warehouse_id = _resolve_warehouse(intent.get("location", "Unknown"))
 
-                # Emit to Event Broker to let System 2 handle the ledger/bidding!
-                event = EventPayload(
-                    event_type="CUSTOMER_ORDER_BOOKED",
-                    payload={
-                        "order_id": f"ORD-{int(asyncio.get_event_loop().time())}",
-                        "item": cat,
-                        "quantity": qty,
-                        "total_value": price,
-                        "provider_id": "System 1 Auth",
-                        "warehouse_id": warehouse_id,
-                        "customer_zone": intent.get("location", "Unknown"),
-                        "customer_name": "Autonomous S1 Client",
-                        "customer_phone": "+92-300-8271039",
-                    }
-                )
-                await publish_event(event)
-        
-        return OrderResponse(
-            execution_status=final_state["execution_status"],
-            trace_logs=final_state["agent_trace_logs"],
-            intent=final_state["extracted_intent"],
-            provider=final_state.get("selected_provider", {})
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# ── Include Sub-Routers ───────────────────────────────────────────────────────
+from routers.orchestrator import router as orchestrator_router
+from routers.company import router as company_router
+from routers.action import router as action_router
+from routers.agri import router as agri_router
 
-@app.post("/api/voice/transcribe")
-async def transcribe_voice(req: VoiceRequest):
-    """
-    Voice-to-text transcription endpoint.
-    Accepts base64-encoded audio (WAV/OGG/MP3) and returns the transcribed text.
-    Uses Gemini's multimodal audio capability.
-    Supports English, Urdu, and Roman Urdu (auto-detected).
-    """
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        raise HTTPException(
-            status_code=503,
-            detail="GEMINI_API_KEY not configured. Set it in your .env file to enable voice transcription."
-        )
-    try:
-        audio_bytes = base64.b64decode(req.audio_base64)
-        from google import genai
-        from google.genai import types
+app.include_router(orchestrator_router)
+app.include_router(company_router)
+app.include_router(action_router)
+app.include_router(agri_router)
 
-        client = genai.Client(api_key=api_key)
 
-        lang_prompt = {
-            "ur":          "The audio may be in Urdu. Transcribe exactly.",
-            "roman_urdu":  "The audio may be in Roman Urdu (Urdu written in Latin script). Transcribe exactly.",
-        }.get(req.language_hint, "The audio may be in English, Urdu, or Roman Urdu. Transcribe exactly.")
-
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[
-                types.Part.from_bytes(data=audio_bytes, mime_type=req.mime_type),
-                f"{lang_prompt} Return only the raw transcription text, no formatting.",
-            ],
-        )
-        transcript = response.text.strip()
-        return {"status": "success", "transcript": transcript, "length": len(transcript)}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
-
-# ── S1 Provider Directory Endpoints ──────────────────────────────────────────
-from tools.database import get_all_providers, query_mock_provider_db as _search_providers
-
-@app.get("/api/providers")
-def api_list_providers():
-    """Return the full provider registry (33 providers, 7 categories, 9 zones)."""
-    return get_all_providers()
-
-@app.get("/api/providers/search")
-def api_search_providers(category: str, location: str = "Unknown", max_results: int = 10):
-    """
-    Zone-aware provider search with adjacency fallback.
-    Returns providers sorted by rating desc, price asc.
-    """
-    return _search_providers(location=location, category=category, max_results=max_results)
-
-@app.get("/api/providers/categories")
-def api_provider_categories():
-    """Return all available service categories."""
-    from tools.database import MOCK_PROVIDERS
-    cats = sorted({p["category"] for p in MOCK_PROVIDERS})
-    return {"categories": cats}
-
-# --- SYSTEM 2 (COMPANY BRAIN INVENTORY REST API) ---
-@app.get("/api/warehouses")
-def api_get_warehouses():
-    return get_warehouses()
-
-@app.get("/api/suppliers")
-def api_get_suppliers():
-    return get_suppliers()
-
-@app.post("/api/suppliers/add")
-def api_add_supplier(req: SupplierRequest):
-    res = add_supplier(req.name, req.contact, req.rating, req.reliability_score, req.lead_time_days)
-    if res["status"] == "error":
-        raise HTTPException(status_code=400, detail=res["message"])
-    return res
-
-# (random already imported at top)
-
-@app.get("/api/vendors/search")
-def api_search_vendors(query: str, location: str = "Karachi"):
-    # Dual-Mode Google Places TextSearch simulation / API call
-    import os
-    api_key = os.environ.get("GOOGLE_MAPS_API_KEY")
-    if api_key:
-        try:
-            import requests
-            url = f"https://maps.googleapis.com/maps/api/place/textsearch/json?query={query}+wholesale+{location}&key={api_key}"
-            res = requests.get(url).json()
-            status = res.get("status")
-            
-            if status == "OK":
-                results = res.get("results", [])[:5]
-                vendors = []
-                for i, p in enumerate(results):
-                    rating = p.get("rating", round(random.uniform(4.0, 4.9), 1))
-                    price_val = round(random.uniform(50.0, 500.0), 1)
-                    distance_val = round(random.uniform(0.5, 6.0), 1)
-                    
-                    vendors.append({
-                        "id": f"map-{i}",
-                        "name": p.get("name"),
-                        "address": p.get("formatted_address"),
-                        "rating": rating,
-                        "distance": f"{distance_val} km",
-                        "price": f"Rs {price_val}",
-                        "contact": p.get("formatted_phone_number", f"+92-300-{random.randint(1000000, 9999999)}"),
-                        "reliability_score": round(90.0 - distance_val * 2 + rating * 2, 1)
-                    })
-                return {"status": "success", "vendors": vendors}
-            else:
-                print(f"[Supplier API] Google Places API returned non-OK status: {status}")
-                if "error_message" in res:
-                    print(f"[Supplier API] Error Details: {res['error_message']}")
-        except Exception as e:
-            print(f"[Supplier API] Live API request failed with exception: {e}")
-            
-    # Try 100% Free OpenStreetMap Nominatim API fallback before mocking
-    osm_vendors = []
-    try:
-        import requests
-        headers = {"User-Agent": "OpsifyERP/1.0"}
-        search_q = f"{query} {location}"
-        url = f"https://nominatim.openstreetmap.org/search?q={search_q}&format=json&limit=5"
-        res = requests.get(url, headers=headers, timeout=8).json()
-        
-        if not res:
-            url = f"https://nominatim.openstreetmap.org/search?q={query}+Karachi&format=json&limit=5"
-            res = requests.get(url, headers=headers, timeout=8).json()
-            
-        for i, item in enumerate(res):
-            rating = round(random.uniform(4.0, 4.9), 1)
-            price_val = round(random.uniform(50.0, 500.0), 1)
-            distance_val = round(random.uniform(0.5, 6.0), 1)
-            
-            display_name = item.get("display_name", f"{query.title()} Wholesaler")
-            parts = [p.strip() for p in display_name.split(",")]
-            name = parts[0]
-            if len(parts) > 1 and len(name) < 10:
-                name = f"{name} ({parts[1]})"
-                
-            osm_vendors.append({
-                "id": f"osm-{i}",
-                "name": name,
-                "address": display_name[:120] + ("..." if len(display_name) > 120 else ""),
-                "rating": rating,
-                "distance": f"{distance_val} km",
-                "price": f"Rs {price_val}",
-                "contact": f"+92-300-{random.randint(1000000, 9999999)}",
-                "reliability_score": round(90.0 - distance_val * 2 + rating * 2, 1)
-            })
-    except Exception as e:
-        print(f"[Supplier API] OSM Nominatim search failed: {e}")
-        
-    if osm_vendors:
-        return {"status": "success", "vendors": osm_vendors}
-            
-    # Mock data generator for DHA/Clifton/Gulshan
-    keywords = query.lower()
-    product_type = "Distributor"
-    if "milk" in keywords or "dairy" in keywords:
-        category = "Dairy"
-        item = "Milk"
-        unit = "liter"
-        prefixes = ["Sindh Farms Milk", "National Dairy", "Pak-Arab Wholesalers", "Karachi Fresh Milk", "Premium Farms Wholesalers"]
-        price_base = 100.0
-    elif "wire" in keywords or "metal" in keywords or "copper" in keywords:
-        category = "Hardware"
-        item = "Wire"
-        unit = "meter"
-        prefixes = ["Pakistan Cables Bulk", "Gulshan Electric Wholesalers", "DHA Copper Mills", "Karachi Hardware Traders", "Indus Metal Hub"]
-        price_base = 30.0
-    elif "pipe" in keywords or "pvc" in keywords:
-        category = "Hardware"
-        item = "Pipe"
-        unit = "piece"
-        prefixes = ["Indus PVC Pipes", "Karachi Plumbing Wholesalers", "Standard Fitting Co.", "Clifton Hardware Hub", "Super Pipe Wholesalers"]
-        price_base = 80.0
-    elif "bread" in keywords or "bakery" in keywords:
-        category = "Bakery"
-        item = "Bread"
-        unit = "loaf"
-        prefixes = ["BakeHouse Wholesalers", "National Bread Co.", "Standard Grain Bakery", "Premium Flour Wholesalers", "Karachi Loaf Distributors"]
-        price_base = 40.0
-    else:
-        category = "General"
-        item = "Goods"
-        unit = "unit"
-        prefixes = [f"Karachi {query.title()} Traders", f"{location} {query.title()} Co.", f"Sindh Wholesale {query.title()}", f"Prime {query.title()} Wholesalers", f"Apex {query.title()} Distributors"]
-        price_base = 150.0
-
-    vendors = []
-    # Seed randomized locations and prices for exactly 5 vendors
-    random.seed(len(keywords) + len(location)) # Stable seed for query
-    for i, prefix in enumerate(prefixes[:5]):
-        rating = round(random.uniform(4.0, 5.0), 1)
-        price_val = round(price_base * random.uniform(0.85, 1.15), 1)
-        distance_val = round(random.uniform(0.5, 5.0), 1)
-        
-        vendors.append({
-            "id": f"map-{i}",
-            "name": prefix,
-            "address": f"Plot {random.randint(10, 250)}, Block {random.randint(1, 9)}, {location}, Karachi",
-            "rating": rating,
-            "distance": f"{distance_val} km",
-            "price": f"Rs {price_val}/{unit}",
-            "contact": f"+92-321-{random.randint(1000000, 9999999)}",
-            "reliability_score": round(100.0 - (distance_val * 3) - (i * 2), 1)
-        })
-
-    return {"status": "success", "vendors": vendors}
-
-@app.get("/api/products")
-def api_get_products():
-    return get_products()
-
-@app.post("/api/products/add")
-def api_add_product(req: ProductRequest):
-    qty = req.initial_stock if req.initial_stock is not None else (req.stock if req.stock is not None else 0.0)
-    res = add_product(
-        sku=req.sku,
-        name=req.name,
-        category=req.category or "",
-        variant=req.variant or "",
-        unit=req.unit or "units",
-        cost_price=req.cost_price,
-        selling_price=req.selling_price,
-        supplier_id=req.supplier_id,
-        warehouse_id=req.warehouse_id or 1,
-        initial_stock=qty,
-        reorder_threshold=req.reorder_threshold or 0.0
-    )
-    if res["status"] == "error":
-        raise HTTPException(status_code=400, detail=res["message"])
-    return res
-
-@app.post("/api/transactions/sale")
-def api_record_sale(req: TransactionRequest):
-    res = record_sale(req.product_id, req.warehouse_id, req.quantity, req.value)
-    if res["status"] == "error":
-        raise HTTPException(status_code=400, detail=res["message"])
-    return res
-
-class ProcurementSuggestRequest(BaseModel):
-    product_name: str
-    lat: Optional[float] = 24.8607
-    lng: Optional[float] = 67.0011
-
-@app.post("/api/procurement/suggest")
-def api_procurement_suggest(req: ProcurementSuggestRequest):
-    from agents.bidding_agent import generate_procurement_suggestions
-    suggestions = generate_procurement_suggestions(req.product_name, req.lat, req.lng)
-    return {"suggestions": suggestions}
-
-class ChatMessage(BaseModel):
-    role: str
-    content: str
-
-class ChatRequest(BaseModel):
-    messages: List[ChatMessage]
-
-@app.post("/api/chat")
-async def api_chat(req: ChatRequest):
-    from agents.chat_agent import run_chat
-    msgs = [{"role": m.role, "content": m.content} for m in req.messages]
-    result = run_chat(msgs)
-    return result
-
-@app.post("/api/procurement/approve")
-async def api_procurement_approve(req: ProcurementApproveRequest):
-    vendor = req.vendor
-    name = vendor.get("name", "Unknown Supplier")
-    
-    # Check if supplier exists, else add them
-    sups = get_suppliers()
-    sup_id = None
-    for s in sups:
-        if s["name"] == name:
-            sup_id = s["id"]
-            break
-            
-    if not sup_id:
-        res = add_supplier(
-            name=name,
-            contact=vendor.get("contact", ""),
-            rating=vendor.get("rating", 4.0),
-            reliability_score=vendor.get("reliability_score", 80.0),
-            lead_time_days=vendor.get("lead_time_days", 1)
-        )
-        if res["status"] == "error":
-            raise HTTPException(status_code=400, detail=res["message"])
-        sup_id = res.get("supplier_id", 1)
-        
-    # Parse price
-    price_str = str(vendor.get("price", "0"))
-    try:
-        price_val = float(''.join(c for c in price_str if c.isdigit() or c == '.'))
-    except ValueError:
-        price_val = 100.0
-        
-    total_value = price_val * req.quantity
-    
-    res = record_restock(req.product_id, req.warehouse_id, req.quantity, total_value)
-    if res["status"] == "error":
-        raise HTTPException(status_code=400, detail=res["message"])
-        
-    await broker.publish("SYSTEM_LOG", "ProcurementEngine", {
-        "message": f"Manual Procurement Approved: Restocked {req.quantity} units from {name} for Rs {total_value}."
-    })
-    
-    return {"status": "success", "message": "Procurement approved and stock updated."}
-
-@app.post("/api/transactions/restock")
-def api_record_restock(req: TransactionRequest):
-    res = record_restock(req.product_id, req.warehouse_id, req.quantity, req.value)
-    if res["status"] == "error":
-        raise HTTPException(status_code=400, detail=res["message"])
-    return res
-
-@app.post("/api/transactions/adjustment")
-def api_record_adjustment(req: AdjustmentRequest):
-    res = record_adjustment(req.product_id, req.warehouse_id, req.quantity_diff, req.reason)
-    if res["status"] == "error":
-        raise HTTPException(status_code=400, detail=res["message"])
-    return res
-
-@app.get("/api/transactions")
-def api_get_transactions():
-    return get_transactions()
-
-@app.get("/api/inventory/predictions")
-def api_get_demand_predictions():
-    return get_demand_predictions()
-
-@app.get("/api/inventory/suggestions")
-def api_get_reorder_suggestions():
-    return get_reorder_suggestions()
-
-@app.get("/api/export/csv")
-def api_export_csv():
-    output = io.StringIO()
-    writer = csv.writer(output)
-    
-    writer.writerow(["--- INVENTORY & STOCK ---"])
-    products = get_products()
-    if products:
-        writer.writerow(products[0].keys())
-        for p in products:
-            writer.writerow(p.values())
-            
-    writer.writerow([])
-    writer.writerow(["--- TRANSACTIONS & ORDERS ---"])
-    txs = get_transactions()
-    if txs:
-        writer.writerow(txs[0].keys())
-        for t in txs:
-            writer.writerow(t.values())
-            
-    writer.writerow([])
-    writer.writerow(["--- SUPPLIERS ---"])
-    sups = get_suppliers()
-    if sups:
-        writer.writerow(sups[0].keys())
-        for s in sups:
-            writer.writerow(s.values())
-            
-    output.seek(0)
-    return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=opsify_ledger_export.csv"}
-    )
-
-# --- SYSTEM 1 AGENTIC KIT ---
-from agents.chat_scan_agent import scan_chats_for_incomplete_orders
-
-class ChatMessage(BaseModel):
-    text: str
-
-class ChatUser(BaseModel):
-    name: str
-
-class ChatPayloadItem(BaseModel):
-    id: str
-    users: List[ChatUser] = []
-    messages: List[ChatMessage] = []
-
-@app.post("/api/agents/scan-chats")
-def api_scan_chats(req: List[ChatPayloadItem]):
-    try:
-        # Convert Pydantic models to plain dicts for the agent
-        raw = [item.model_dump() if hasattr(item, 'model_dump') else item.dict() for item in req]
-        return scan_chats_for_incomplete_orders(raw)
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# ============================================================
-# --- SYSTEM 3 (ACTION BRAIN — LIVE GEOLOCATION ENGINE) ---
-# ============================================================
-from action_brain.geo import compute_route, nearest_depot, zone_to_coords, DEPOTS, ZONE_COORDS
-from action_brain.riders import allocate_rider, get_all_riders
-from action_brain.state_machine import create_job, advance_job, get_job, list_jobs
-
-class DispatchRequest(BaseModel):
-    order_id:       str
-    destination:    str           # Zone name e.g. "Clifton"
-    item:           str
-    customer_name:  str
-    customer_phone: str
-
-class RouteRequest(BaseModel):
-    origin_lat:  float
-    origin_lng:  float
-    dest_lat:    float
-    dest_lng:    float
-
-@app.get("/api/action/zones")
-def api_list_zones():
-    """Return all known zone names and their GPS coordinates."""
-    return {"zones": [{"name": k, "lat": v[0], "lng": v[1]} for k, v in ZONE_COORDS.items()]}
-
-@app.get("/api/action/depots")
-def api_list_depots():
-    """Return all depot hubs."""
-    return {"depots": list(DEPOTS.values())}
-
-@app.post("/api/action/route")
-def api_compute_route(req: RouteRequest):
-    """Compute live OSRM road-network route between two GPS points."""
-    result = compute_route(req.origin_lat, req.origin_lng, req.dest_lat, req.dest_lng)
-    return result
-
-@app.get("/api/action/nearest-depot")
-def api_nearest_depot(lat: float, lng: float):
-    """Find the nearest Opsify depot hub to a GPS coordinate."""
-    return nearest_depot(lat, lng)
-
-@app.get("/api/action/riders")
-def api_list_riders():
-    """List all registered riders in the system."""
-    return get_all_riders()
-
-@app.post("/api/action/dispatch")
-def api_dispatch_job(req: DispatchRequest):
-    """
-    Full dispatch pipeline:
-    1. Resolve destination zone to GPS.
-    2. Allocate nearest available rider via real OSRM ETA.
-    3. Create a job in DISPATCHED state.
-    Returns full job + route details.
-    """
-    try:
-        rider = allocate_rider(req.destination)
-        if "error" in rider:
-            raise HTTPException(status_code=503, detail=rider["error"])
-
-        route = rider["route"]
-        job = create_job(
-            order_id       = req.order_id,
-            rider          = rider,
-            destination    = req.destination,
-            route          = route,
-            item           = req.item,
-            customer_name  = req.customer_name,
-            customer_phone = req.customer_phone,
-        )
-        return {"status": "success", "job": job}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/action/jobs/{job_id}/advance")
-def api_advance_job(job_id: str):
-    """Advance a job to the next state in the pipeline."""
-    result = advance_job(job_id)
-    if "error" in result:
-        raise HTTPException(status_code=404, detail=result["error"])
-    return result
-
-@app.get("/api/action/jobs/{job_id}")
-def api_get_job(job_id: str):
-    """Fetch a specific job by ID."""
-    job = get_job(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail=f"Job {job_id} not found.")
-    return job
-
-@app.get("/api/action/jobs")
-def api_list_jobs():
-    """List all active dispatch jobs."""
-    return list_jobs()
-
+# ── Startup Execution ────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-

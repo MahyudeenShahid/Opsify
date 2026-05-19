@@ -246,6 +246,22 @@ export const ApiService = {
     return response.json();
   },
 
+  async getAgriDemandFeed(lat?: number, lng?: number): Promise<any> {
+    const response = await fetch(`${BASE_URL}/agri/demand-feed?lat=${lat || 24.8138}&lng=${lng || 67.0366}`, { headers: authHeaders() });
+    if (!response.ok) throw new Error('Failed to fetch agricultural demand feed');
+    return response.json();
+  },
+
+  async dispatchAgriShared(lat?: number, lng?: number): Promise<any> {
+    const response = await fetch(`${BASE_URL}/agri/dispatch-shared`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ lat: lat || 24.8138, lng: lng || 67.0366 }),
+    });
+    if (!response.ok) throw new Error('Failed to dispatch shared logistics');
+    return response.json();
+  },
+
   getExportCsvUrl(): string {
     return `${BASE_URL}/export/csv`;
   },

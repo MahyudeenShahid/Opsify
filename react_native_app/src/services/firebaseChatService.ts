@@ -191,8 +191,7 @@ export const FirebaseChatService = {
 
     const q = query(
       collection(db, 'chats'),
-      where('participants', 'array-contains', userId),
-      orderBy('updatedAt', 'desc')
+      where('participants', 'array-contains', userId)
     );
 
     return onSnapshot(q, async (snapshot) => {
@@ -218,6 +217,14 @@ export const FirebaseChatService = {
           users
         });
       }
+
+      // Sort in memory to bypass Firestore composite index requirement!
+      chats.sort((a, b) => {
+        const timeA = a.updatedAt ? (a.updatedAt.toDate ? a.updatedAt.toDate().getTime() : new Date(a.updatedAt).getTime()) : 0;
+        const timeB = b.updatedAt ? (b.updatedAt.toDate ? b.updatedAt.toDate().getTime() : new Date(b.updatedAt).getTime()) : 0;
+        return timeB - timeA;
+      });
+
       callback(chats);
     });
   },
