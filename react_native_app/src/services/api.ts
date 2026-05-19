@@ -120,5 +120,66 @@ export const ApiService = {
     });
     if (!response.ok) throw new Error('Failed to scan chats');
     return response.json();
-  }
+  },
+
+  async searchVendors(query: string, location: string): Promise<any[]> {
+    const response = await fetch(`${BASE_URL}/vendors/search?query=${encodeURIComponent(query)}&location=${encodeURIComponent(location)}`);
+    if (!response.ok) throw new Error('Failed to search vendors');
+    const res = await response.json();
+    return res.vendors;
+  },
+
+  // ─── System 3: Action Brain ───────────────────────────────────────────
+  async dispatchJob(data: {
+    order_id: string;
+    destination: string;
+    item: string;
+    customer_name: string;
+    customer_phone: string;
+  }): Promise<any> {
+    const response = await fetch(`${BASE_URL}/action/dispatch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.detail || 'Failed to dispatch job');
+    }
+    return response.json();
+  },
+
+  async advanceJob(jobId: string): Promise<any> {
+    const response = await fetch(`${BASE_URL}/action/jobs/${jobId}/advance`, { method: 'POST' });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.detail || 'Failed to advance job');
+    }
+    return response.json();
+  },
+
+  async getJob(jobId: string): Promise<any> {
+    const response = await fetch(`${BASE_URL}/action/jobs/${jobId}`);
+    if (!response.ok) throw new Error('Job not found');
+    return response.json();
+  },
+
+  async listJobs(): Promise<any[]> {
+    const response = await fetch(`${BASE_URL}/action/jobs`);
+    if (!response.ok) throw new Error('Failed to list jobs');
+    return response.json();
+  },
+
+  async listRiders(): Promise<any[]> {
+    const response = await fetch(`${BASE_URL}/action/riders`);
+    if (!response.ok) throw new Error('Failed to list riders');
+    return response.json();
+  },
+
+  async listZones(): Promise<any[]> {
+    const response = await fetch(`${BASE_URL}/action/zones`);
+    if (!response.ok) throw new Error('Failed to list zones');
+    const res = await response.json();
+    return res.zones;
+  },
 };

@@ -358,3 +358,19 @@ def get_reorder_suggestions() -> List[Dict[str, Any]]:
         
     return suggestions
 
+def add_supplier(name: str, contact: str, rating: float, reliability_score: float, lead_time_days: int) -> Dict[str, Any]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO suppliers (name, contact, rating, reliability_score, lead_time_days)
+            VALUES (?, ?, ?, ?, ?)
+        """, (name, contact, rating, reliability_score, lead_time_days))
+        sup_id = cursor.lastrowid
+        conn.commit()
+        return {"status": "success", "id": sup_id}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+    finally:
+        conn.close()
+

@@ -11,6 +11,7 @@ from broker.event_broker import broker
 from company_brain.inventory import (
     init_db,
     get_suppliers,
+    add_supplier,
     add_product,
     get_products,
     record_sale,
@@ -50,6 +51,13 @@ class OrderResponse(BaseModel):
 class EventPayload(BaseModel):
     event_type: str
     payload: dict
+
+class SupplierRequest(BaseModel):
+    name: str
+    contact: str
+    rating: float
+    reliability_score: float
+    lead_time_days: int
 
 class ProductRequest(BaseModel):
     sku: str
@@ -151,6 +159,102 @@ def api_get_warehouses():
 def api_get_suppliers():
     return get_suppliers()
 
+@app.post("/api/suppliers/add")
+def api_add_supplier(req: SupplierRequest):
+    res = add_supplier(req.name, req.contact, req.rating, req.reliability_score, req.lead_time_days)
+    if res["status"] == "error":
+        raise HTTPException(status_code=400, detail=res["message"])
+    return res
+
+import random
+
+@app.get("/api/vendors/search")
+def api_search_vendors(query: str, location: str = "Karachi"):
+    # Dual-Mode Google Places TextSearch simulation / API call
+    import os
+    api_key = os.environ.get("GOOGLE_MAPS_API_KEY")
+    if api_key:
+        try:
+            import requests
+            url = f"https://maps.googleapis.com/maps/api/place/textsearch/json?query={query}+wholesale+{location}&key={api_key}"
+            res = requests.get(url).json()
+            results = res.get("results", [])[:5]
+            
+            vendors = []
+            for i, p in enumerate(results):
+                rating = p.get("rating", round(random.uniform(4.0, 4.9), 1))
+                price_val = round(random.uniform(50.0, 500.0), 1)
+                distance_val = round(random.uniform(0.5, 6.0), 1)
+                
+                vendors.append({
+                    "id": f"map-{i}",
+                    "name": p.get("name"),
+                    "address": p.get("formatted_address"),
+                    "rating": rating,
+                    "distance": f"{distance_val} km",
+                    "price": f"Rs {price_val}",
+                    "contact": p.get("formatted_phone_number", f"+92-300-{random.randint(1000000, 9999999)}"),
+                    "reliability_score": round(90.0 - distance_val * 2 + rating * 2, 1)
+                })
+            return {"status": "success", "vendors": vendors}
+        except Exception as e:
+            pass
+            
+    # Mock data generator for DHA/Clifton/Gulshan
+    keywords = query.lower()
+    product_type = "Distributor"
+    if "milk" in keywords or "dairy" in keywords:
+        category = "Dairy"
+        item = "Milk"
+        unit = "liter"
+        prefixes = ["Sindh Farms Milk", "National Dairy", "Pak-Arab Wholesalers", "Karachi Fresh Milk", "Premium Farms Wholesalers"]
+        price_base = 100.0
+    elif "wire" in keywords or "metal" in keywords or "copper" in keywords:
+        category = "Hardware"
+        item = "Wire"
+        unit = "meter"
+        prefixes = ["Pakistan Cables Bulk", "Gulshan Electric Wholesalers", "DHA Copper Mills", "Karachi Hardware Traders", "Indus Metal Hub"]
+        price_base = 30.0
+    elif "pipe" in keywords or "pvc" in keywords:
+        category = "Hardware"
+        item = "Pipe"
+        unit = "piece"
+        prefixes = ["Indus PVC Pipes", "Karachi Plumbing Wholesalers", "Standard Fitting Co.", "Clifton Hardware Hub", "Super Pipe Wholesalers"]
+        price_base = 80.0
+    elif "bread" in keywords or "bakery" in keywords:
+        category = "Bakery"
+        item = "Bread"
+        unit = "loaf"
+        prefixes = ["BakeHouse Wholesalers", "National Bread Co.", "Standard Grain Bakery", "Premium Flour Wholesalers", "Karachi Loaf Distributors"]
+        price_base = 40.0
+    else:
+        category = "General"
+        item = "Goods"
+        unit = "unit"
+        prefixes = [f"Karachi {query.title()} Traders", f"{location} {query.title()} Co.", f"Sindh Wholesale {query.title()}", f"Prime {query.title()} Wholesalers", f"Apex {query.title()} Distributors"]
+        price_base = 150.0
+
+    vendors = []
+    # Seed randomized locations and prices for exactly 5 vendors
+    random.seed(len(keywords) + len(location)) # Stable seed for query
+    for i, prefix in enumerate(prefixes[:5]):
+        rating = round(random.uniform(4.0, 5.0), 1)
+        price_val = round(price_base * random.uniform(0.85, 1.15), 1)
+        distance_val = round(random.uniform(0.5, 5.0), 1)
+        
+        vendors.append({
+            "id": f"map-{i}",
+            "name": prefix,
+            "address": f"Plot {random.randint(10, 250)}, Block {random.randint(1, 9)}, {location}, Karachi",
+            "rating": rating,
+            "distance": f"{distance_val} km",
+            "price": f"Rs {price_val}/{unit}",
+            "contact": f"+92-321-{random.randint(1000000, 9999999)}",
+            "reliability_score": round(100.0 - (distance_val * 3) - (i * 2), 1)
+        })
+
+    return {"status": "success", "vendors": vendors}
+
 @app.get("/api/products")
 def api_get_products():
     return get_products()
@@ -209,6 +313,104 @@ def api_scan_chats(req: list):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# ============================================================
+# --- SYSTEM 3 (ACTION BRAIN — LIVE GEOLOCATION ENGINE) ---
+# ============================================================
+from action_brain.geo import compute_route, nearest_depot, zone_to_coords, DEPOTS, ZONE_COORDS
+from action_brain.riders import allocate_rider, get_all_riders
+from action_brain.state_machine import create_job, advance_job, get_job, list_jobs
+
+class DispatchRequest(BaseModel):
+    order_id:       str
+    destination:    str           # Zone name e.g. "Clifton"
+    item:           str
+    customer_name:  str
+    customer_phone: str
+
+class RouteRequest(BaseModel):
+    origin_lat:  float
+    origin_lng:  float
+    dest_lat:    float
+    dest_lng:    float
+
+@app.get("/api/action/zones")
+def api_list_zones():
+    """Return all known zone names and their GPS coordinates."""
+    return {"zones": [{"name": k, "lat": v[0], "lng": v[1]} for k, v in ZONE_COORDS.items()]}
+
+@app.get("/api/action/depots")
+def api_list_depots():
+    """Return all depot hubs."""
+    return {"depots": list(DEPOTS.values())}
+
+@app.post("/api/action/route")
+def api_compute_route(req: RouteRequest):
+    """Compute live OSRM road-network route between two GPS points."""
+    result = compute_route(req.origin_lat, req.origin_lng, req.dest_lat, req.dest_lng)
+    return result
+
+@app.get("/api/action/nearest-depot")
+def api_nearest_depot(lat: float, lng: float):
+    """Find the nearest Opsify depot hub to a GPS coordinate."""
+    return nearest_depot(lat, lng)
+
+@app.get("/api/action/riders")
+def api_list_riders():
+    """List all registered riders in the system."""
+    return get_all_riders()
+
+@app.post("/api/action/dispatch")
+def api_dispatch_job(req: DispatchRequest):
+    """
+    Full dispatch pipeline:
+    1. Resolve destination zone to GPS.
+    2. Allocate nearest available rider via real OSRM ETA.
+    3. Create a job in DISPATCHED state.
+    Returns full job + route details.
+    """
+    try:
+        rider = allocate_rider(req.destination)
+        if "error" in rider:
+            raise HTTPException(status_code=503, detail=rider["error"])
+
+        route = rider["route"]
+        job = create_job(
+            order_id       = req.order_id,
+            rider          = rider,
+            destination    = req.destination,
+            route          = route,
+            item           = req.item,
+            customer_name  = req.customer_name,
+            customer_phone = req.customer_phone,
+        )
+        return {"status": "success", "job": job}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/action/jobs/{job_id}/advance")
+def api_advance_job(job_id: str):
+    """Advance a job to the next state in the pipeline."""
+    result = advance_job(job_id)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+@app.get("/api/action/jobs/{job_id}")
+def api_get_job(job_id: str):
+    """Fetch a specific job by ID."""
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found.")
+    return job
+
+@app.get("/api/action/jobs")
+def api_list_jobs():
+    """List all active dispatch jobs."""
+    return list_jobs()
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+

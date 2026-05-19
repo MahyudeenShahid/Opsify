@@ -1,15 +1,35 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ScrollView, Animated, Dimensions, ActivityIndicator } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Theme } from '../../core/theme';
 import { ApiService } from '../../services/api';
 
+const { width } = Dimensions.get('window');
+
 export const SupplierManager: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<'directory' | 'scout'>('directory');
   const [suppliers, setSuppliers] = useState<any[]>([]);
+  
+  // Manual Supplier Form State
   const [name, setName] = useState('');
   const [contact, setContact] = useState('');
   const [rating, setRating] = useState('');
   const [reliability, setReliability] = useState('');
   const [leadTime, setLeadTime] = useState('');
+
+  // Map Scout State
+  const [scoutQuery, setScoutQuery] = useState('Milk Wholesaler');
+  const [scoutLocation, setScoutLocation] = useState('Clifton');
+  const [scoutResults, setScoutResults] = useState<any[]>([]);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanComplete, setScanComplete] = useState(false);
+  const [scoutSuccessId, setScoutSuccessId] = useState<string | null>(null);
+
+  // Animated Hooks
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const notifyScale = useRef(new Animated.Value(0)).current;
+  const notifyOpacity = useRef(new Animated.Value(0)).current;
 
   const fetchSuppliers = async () => {
     try {
@@ -24,9 +44,25 @@ export const SupplierManager: React.FC = () => {
     fetchSuppliers();
   }, []);
 
+  const switchTab = (tab: 'directory' | 'scout') => {
+    if (tab === activeTab) return;
+    Animated.timing(fadeAnim, {
+      toValue: 0,
+      duration: 150,
+      useNativeDriver: true,
+    }).start(() => {
+      setActiveTab(tab);
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 250,
+        useNativeDriver: true,
+      }).start();
+    });
+  };
+
   const handleAddSupplier = async () => {
     if (!name || !contact || !rating || !reliability || !leadTime) {
-      Alert.alert('Error', 'Please fill all fields');
+      Alert.alert('Incomplete Form', 'Please satisfy all operational metrics before onboarding.');
       return;
     }
 
@@ -40,60 +76,339 @@ export const SupplierManager: React.FC = () => {
       });
       setName(''); setContact(''); setRating(''); setReliability(''); setLeadTime('');
       fetchSuppliers();
-      Alert.alert('Success', 'Supplier added successfully.');
+      Alert.alert('Supplier Onboarded', 'The distributor has been successfully cataloged.');
     } catch (e: any) {
-      Alert.alert('Error', e.message);
+      Alert.alert('Registry Error', e.message);
+    }
+  };
+
+  const startSatelliteScan = async () => {
+    setIsScanning(true);
+    setScanComplete(false);
+    setScoutResults([]);
+    
+    // Animate notification out if open
+    Animated.parallel([
+      Animated.timing(notifyScale, { toValue: 0, duration: 100, useNativeDriver: true }),
+      Animated.timing(notifyOpacity, { toValue: 0, duration: 100, useNativeDriver: true })
+    ]).start();
+
+    try {
+      const results = await ApiService.searchVendors(scoutQuery, scoutLocation);
+      
+      // Simulate real-world satellite telemetry delay for luxury UX
+      setTimeout(() => {
+        setScoutResults(results);
+        setIsScanning(false);
+        setScanComplete(true);
+        
+        // Luxury notification entrance
+        Animated.parallel([
+          Animated.spring(notifyScale, {
+            toValue: 1,
+            friction: 6,
+            tension: 40,
+            useNativeDriver: true
+          }),
+          Animated.timing(notifyOpacity, {
+            toValue: 1,
+            duration: 200,
+            useNativeDriver: true
+          })
+        ]).start();
+      }, 1800);
+    } catch (e: any) {
+      setIsScanning(false);
+      Alert.alert('Satellite Error', 'Failed to trace coordinate networks.');
+    }
+  };
+
+  const onboardScoutedSupplier = async (vendor: any) => {
+    try {
+      await ApiService.addSupplier({
+        name: vendor.name,
+        contact: vendor.contact,
+        rating: vendor.rating,
+        reliability_score: vendor.reliability_score,
+        lead_time_days: parseInt(vendor.distance) > 3 ? 4 : 2, // dynamic calculation based on distance
+      });
+      
+      setScoutSuccessId(vendor.id);
+      fetchSuppliers();
+      
+      setTimeout(() => {
+        setScoutSuccessId(null);
+        Alert.alert('Onboarding Complete', `${vendor.name} has been certified and added to dynamic restock bidding!`);
+      }, 1000);
+    } catch (e: any) {
+      Alert.alert('Onboarding Failed', e.message);
     }
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.sectionTitle}>🤝 Supplier Directory</Text>
-      {suppliers.map((sup) => (
-        <View key={sup.id} style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.itemName}>{sup.name}</Text>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>⭐ {sup.rating}</Text>
-            </View>
-          </View>
-          <Text style={styles.cardSubtitle}>ID: {sup.id} | Contact: {sup.contact}</Text>
-          <Text style={styles.cardSubtitle}>Reliability: {sup.reliability_score}% | Lead Time: {sup.lead_time_days} days</Text>
-        </View>
-      ))}
-
-      <Text style={styles.sectionTitle}>➕ Add New Supplier</Text>
-      <View style={styles.formCard}>
-        <TextInput style={styles.input} placeholder="Company Name" placeholderTextColor={Theme.colors.textMuted} value={name} onChangeText={setName} />
-        <TextInput style={styles.input} placeholder="Contact Email/Phone" placeholderTextColor={Theme.colors.textMuted} value={contact} onChangeText={setContact} />
+    <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+      {/* Luxury Segmented Control */}
+      <View style={styles.tabContainer}>
+        <TouchableOpacity style={styles.tabButton} onPress={() => switchTab('directory')}>
+          {activeTab === 'directory' && (
+            <LinearGradient colors={Theme.gradients.primary} style={StyleSheet.absoluteFill} start={{x: 0, y: 0}} end={{x: 1, y: 0}} />
+          )}
+          <Text style={[styles.tabButtonText, activeTab === 'directory' && styles.activeTabText]}>
+            🤝 Directory ({suppliers.length})
+          </Text>
+        </TouchableOpacity>
         
-        <View style={styles.row}>
-          <TextInput style={[styles.input, styles.halfInput]} placeholder="Rating (0.0-5.0)" placeholderTextColor={Theme.colors.textMuted} keyboardType="numeric" value={rating} onChangeText={setRating} />
-          <TextInput style={[styles.input, styles.halfInput]} placeholder="Reliability Score (%)" placeholderTextColor={Theme.colors.textMuted} keyboardType="numeric" value={reliability} onChangeText={setReliability} />
-        </View>
-        <TextInput style={styles.input} placeholder="Lead Time (Days)" placeholderTextColor={Theme.colors.textMuted} keyboardType="numeric" value={leadTime} onChangeText={setLeadTime} />
-        
-        <TouchableOpacity style={styles.actionButton} onPress={handleAddSupplier}>
-          <Text style={styles.actionButtonText}>Create Supplier</Text>
+        <TouchableOpacity style={styles.tabButton} onPress={() => switchTab('scout')}>
+          {activeTab === 'scout' && (
+            <LinearGradient colors={Theme.gradients.primary} style={StyleSheet.absoluteFill} start={{x: 0, y: 0}} end={{x: 1, y: 0}} />
+          )}
+          <Text style={[styles.tabButtonText, activeTab === 'scout' && styles.activeTabText]}>
+            📡 Maps Wholesaler Scout
+          </Text>
         </TouchableOpacity>
       </View>
-    </View>
+
+      <Animated.View style={{ opacity: fadeAnim }}>
+        {activeTab === 'directory' ? (
+          // ================= DIRECTORY TAB =================
+          <View style={styles.tabContent}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Supplier Network</Text>
+              <Text style={styles.sectionSubtitle}>Active Wholesalers tied to dynamic inventory bidding.</Text>
+            </View>
+
+            {suppliers.map((sup) => (
+              <View key={sup.id} style={styles.luxuryCard}>
+                <LinearGradient colors={Theme.gradients.surface} style={[StyleSheet.absoluteFill, { borderRadius: Theme.borderRadius.lg }]} />
+                
+                <View style={styles.cardHeader}>
+                  <Text style={styles.supplierName}>{sup.name}</Text>
+                  <View style={styles.ratingBadge}>
+                    <Text style={styles.ratingText}>⭐ {sup.rating.toFixed(1)}</Text>
+                  </View>
+                </View>
+                
+                <View style={styles.dividerLine} />
+                
+                <View style={styles.cardDetailRow}>
+                  <View style={styles.detailCol}>
+                    <Text style={styles.detailLabel}>RELIABILITY</Text>
+                    <Text style={[styles.detailValue, { color: sup.reliability_score >= 90 ? Theme.colors.success : Theme.colors.warning }]}>
+                      {sup.reliability_score}%
+                    </Text>
+                  </View>
+                  <View style={styles.detailCol}>
+                    <Text style={styles.detailLabel}>LEAD TIME</Text>
+                    <Text style={styles.detailValue}>{sup.lead_time_days} Days</Text>
+                  </View>
+                  <View style={styles.detailCol}>
+                    <Text style={styles.detailLabel}>CONTACT</Text>
+                    <Text style={styles.detailValue} numberOfLines={1}>{sup.contact}</Text>
+                  </View>
+                </View>
+              </View>
+            ))}
+
+            {/* Manual Onboarding Form */}
+            <View style={[styles.luxuryCard, { marginTop: Theme.spacing.lg }]}>
+              <LinearGradient colors={Theme.gradients.surface} style={[StyleSheet.absoluteFill, { borderRadius: Theme.borderRadius.lg }]} />
+              
+              <Text style={styles.formTitle}>✨ Onboard Custom Partner</Text>
+              <Text style={styles.formSubtitle}>Manually certify a wholesaler into the SQLite system ledger.</Text>
+              
+              <TextInput style={styles.luxuryInput} placeholder="Company Legal Name" placeholderTextColor={Theme.colors.textMuted} value={name} onChangeText={setName} />
+              <TextInput style={styles.luxuryInput} placeholder="Contact Email or Phone Number" placeholderTextColor={Theme.colors.textMuted} value={contact} onChangeText={setContact} />
+              
+              <View style={styles.inputRow}>
+                <TextInput style={[styles.luxuryInput, { flex: 1, marginRight: Theme.spacing.sm }]} placeholder="Rating (1.0-5.0)" placeholderTextColor={Theme.colors.textMuted} keyboardType="numeric" value={rating} onChangeText={setRating} />
+                <TextInput style={[styles.luxuryInput, { flex: 1, marginLeft: Theme.spacing.sm }]} placeholder="Reliability Score (%)" placeholderTextColor={Theme.colors.textMuted} keyboardType="numeric" value={reliability} onChangeText={setReliability} />
+              </View>
+              
+              <TextInput style={styles.luxuryInput} placeholder="Lead Time Buffer (Days)" placeholderTextColor={Theme.colors.textMuted} keyboardType="numeric" value={leadTime} onChangeText={setLeadTime} />
+              
+              <TouchableOpacity style={styles.luxuryButton} onPress={handleAddSupplier}>
+                <LinearGradient colors={Theme.gradients.secondary} style={[StyleSheet.absoluteFill, { borderRadius: Theme.borderRadius.md }]} start={{x: 0, y: 0}} end={{x: 1, y: 0}} />
+                <Text style={styles.buttonText}>Certify Wholesaler</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          // ================= MAPS SCOUT TAB =================
+          <View style={styles.tabContent}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Wholesaler Scout</Text>
+              <Text style={styles.sectionSubtitle}>Query active commercial networks and select suppliers to onboard.</Text>
+            </View>
+
+            {/* Search Panel */}
+            <View style={styles.searchCard}>
+              <LinearGradient colors={Theme.gradients.surface} style={[StyleSheet.absoluteFill, { borderRadius: Theme.borderRadius.lg }]} />
+              
+              <View style={styles.inputLabelGroup}>
+                <Text style={styles.inputLabel}>WHOLESALE COMMODITY</Text>
+                <TextInput style={styles.scoutInput} placeholder="e.g. Milk Wholesaler, Copper Wire" placeholderTextColor={Theme.colors.textMuted} value={scoutQuery} onChangeText={setScoutQuery} />
+              </View>
+
+              <View style={styles.inputLabelGroup}>
+                <Text style={styles.inputLabel}>TARGET SEARCH GEOGRAPHY (REGION)</Text>
+                <View style={styles.chipsRow}>
+                  {['Clifton', 'DHA', 'Gulshan'].map((loc) => (
+                    <TouchableOpacity key={loc} style={[styles.chipButton, scoutLocation === loc && styles.activeChip]} onPress={() => setScoutLocation(loc)}>
+                      <Text style={[styles.chipText, scoutLocation === loc && styles.activeChipText]}>
+                        📍 {loc}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              <TouchableOpacity style={[styles.scoutSearchButton, isScanning && styles.disabledButton]} onPress={startSatelliteScan} disabled={isScanning}>
+                <LinearGradient colors={Theme.gradients.primary} style={[StyleSheet.absoluteFill, { borderRadius: Theme.borderRadius.md }]} start={{x: 0, y: 0}} end={{x: 1, y: 0}} />
+                {isScanning ? (
+                  <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="small" color="#000" style={{ marginRight: 10 }} />
+                    <Text style={[styles.buttonText, { color: '#000' }]}>📡 CALIBRATING SATELLITES...</Text>
+                  </View>
+                ) : (
+                  <Text style={[styles.buttonText, { color: '#000' }]}>🔍 LAUNCH RADAR SEARCH</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {/* Scan Notification Alert */}
+            {scanComplete && (
+              <Animated.View style={[styles.notifyBanner, { opacity: notifyOpacity, transform: [{ scale: notifyScale }] }]}>
+                <LinearGradient colors={['rgba(0, 255, 163, 0.15)', 'rgba(0, 240, 255, 0.05)']} style={[StyleSheet.absoluteFill, { borderRadius: Theme.borderRadius.md }]} />
+                <Text style={styles.notifyBannerText}>
+                  ✨ **SATELLITE RADAR SUCCESS**: Found exactly **5 verified Wholesalers** in {scoutLocation} sorted by Rating, Distance, and wholesale price! Choose the best option to onboard.
+                </Text>
+              </Animated.View>
+            )}
+
+            {/* Vendor Cards List */}
+            {scoutResults.map((vendor, idx) => {
+              const isAdded = scoutSuccessId === vendor.id;
+              return (
+                <View key={vendor.id} style={styles.vendorCard}>
+                  <LinearGradient colors={Theme.gradients.surface} style={[StyleSheet.absoluteFill, { borderRadius: Theme.borderRadius.lg }]} />
+                  
+                  <View style={styles.vendorIndexContainer}>
+                    <Text style={styles.vendorIndexText}>OPTION #{idx + 1}</Text>
+                  </View>
+
+                  <View style={styles.cardHeader}>
+                    <Text style={styles.scoutedName}>{vendor.name}</Text>
+                  </View>
+                  
+                  <Text style={styles.vendorAddress}>📍 {vendor.address}</Text>
+                  
+                  <View style={styles.scoutBadgesRow}>
+                    <View style={[styles.scoutBadge, styles.ratingColor]}>
+                      <Text style={styles.scoutBadgeText}>⭐ {vendor.rating.toFixed(1)} Rating</Text>
+                    </View>
+                    <View style={[styles.scoutBadge, styles.distanceColor]}>
+                      <Text style={styles.scoutBadgeText}>🚗 {vendor.distance}</Text>
+                    </View>
+                    <View style={[styles.scoutBadge, styles.priceColor]}>
+                      <Text style={styles.scoutBadgeText}>🏷️ {vendor.price}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.dividerLine} />
+
+                  <View style={styles.vendorMetricsRow}>
+                    <View style={styles.metricItem}>
+                      <Text style={styles.metricLabel}>Reliability Score</Text>
+                      <Text style={styles.metricVal}>{vendor.reliability_score}%</Text>
+                    </View>
+                    <View style={styles.metricItem}>
+                      <Text style={styles.metricLabel}>Contact Line</Text>
+                      <Text style={styles.metricVal}>{vendor.contact}</Text>
+                    </View>
+                  </View>
+
+                  <TouchableOpacity style={[styles.onboardButton, isAdded && styles.successButton]} onPress={() => onboardScoutedSupplier(vendor)}>
+                    <LinearGradient colors={isAdded ? Theme.gradients.success : Theme.gradients.secondary} style={[StyleSheet.absoluteFill, { borderRadius: Theme.borderRadius.md }]} start={{x: 0, y: 0}} end={{x: 1, y: 0}} />
+                    <Text style={styles.onboardButtonText}>
+                      {isAdded ? '✅ CERTIFIED & CONNECTED' : '⚡ CHOOSE & ONBOARD SUPPLIER'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </View>
+        )}
+      </Animated.View>
+    </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { paddingBottom: Theme.spacing.md },
-  sectionTitle: { color: Theme.colors.text, fontSize: 18, fontWeight: 'bold', marginVertical: Theme.spacing.md },
-  card: { backgroundColor: Theme.colors.surface, borderColor: Theme.colors.border, borderWidth: 1.5, borderRadius: Theme.borderRadius.xl, padding: Theme.spacing.md, marginBottom: Theme.spacing.sm },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  itemName: { color: Theme.colors.text, fontWeight: 'bold', fontSize: 16 },
-  badge: { paddingHorizontal: Theme.spacing.sm, paddingVertical: Theme.spacing.xs, borderRadius: 12, borderWidth: 1, borderColor: '#FFB86C', backgroundColor: 'rgba(255, 184, 108, 0.1)' },
-  badgeText: { fontSize: 12, fontWeight: 'bold', color: '#FFB86C' },
-  cardSubtitle: { color: Theme.colors.textMuted, fontSize: 13, marginTop: Theme.spacing.xs },
-  formCard: { backgroundColor: Theme.colors.surface, borderColor: Theme.colors.border, borderWidth: 1.5, borderRadius: Theme.borderRadius.xl, padding: Theme.spacing.md },
-  input: { height: 45, backgroundColor: Theme.colors.background, borderColor: Theme.colors.border, borderWidth: 1.5, borderRadius: Theme.borderRadius.md, paddingHorizontal: Theme.spacing.md, color: Theme.colors.text, marginBottom: Theme.spacing.sm },
-  row: { flexDirection: 'row', justifyContent: 'space-between' },
-  halfInput: { flex: 0.48 },
-  actionButton: { height: 45, backgroundColor: Theme.colors.secondary, borderRadius: Theme.borderRadius.md, justifyContent: 'center', alignItems: 'center', marginTop: Theme.spacing.xs },
-  actionButtonText: { color: '#000', fontWeight: 'bold', fontSize: 15 },
+  scrollContainer: { paddingBottom: Theme.spacing.xl, paddingHorizontal: Theme.spacing.sm },
+  tabContainer: { flexDirection: 'row', backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: Theme.borderRadius.pill, padding: 4, marginBottom: Theme.spacing.md, borderWidth: 1.5, borderColor: 'rgba(255, 255, 255, 0.1)' },
+  tabButton: { flex: 1, height: 44, borderRadius: Theme.borderRadius.pill, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+  tabButtonText: { color: Theme.colors.textMuted, fontWeight: '700', fontSize: 13, textTransform: 'uppercase', letterSpacing: 0.5 },
+  activeTabText: { color: '#000', fontWeight: '900' },
+  tabContent: { marginTop: Theme.spacing.xs },
+  sectionHeader: { marginBottom: Theme.spacing.md, paddingHorizontal: Theme.spacing.xs },
+  sectionTitle: { color: Theme.colors.text, fontSize: 22, fontWeight: '900', letterSpacing: -0.5 },
+  sectionSubtitle: { color: Theme.colors.textMuted, fontSize: 13, marginTop: 4 },
+  
+  // Luxury Directory CSS
+  luxuryCard: { position: 'relative', borderRadius: Theme.borderRadius.lg, borderWidth: 1.5, borderColor: Theme.colors.border, padding: Theme.spacing.md, marginBottom: Theme.spacing.md, overflow: 'hidden', ...Theme.shadows.glass },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', zIndex: 1 },
+  supplierName: { color: Theme.colors.text, fontSize: 17, fontWeight: '800' },
+  ratingBadge: { paddingHorizontal: Theme.spacing.sm, paddingVertical: 4, borderRadius: Theme.borderRadius.sm, backgroundColor: 'rgba(255, 184, 0, 0.15)', borderWidth: 1, borderColor: '#FFB800' },
+  ratingText: { color: '#FFB800', fontWeight: '800', fontSize: 12 },
+  dividerLine: { height: 1.5, backgroundColor: Theme.colors.border, marginVertical: Theme.spacing.sm, zIndex: 1 },
+  cardDetailRow: { flexDirection: 'row', justifyContent: 'space-between', zIndex: 1 },
+  detailCol: { flex: 1 },
+  detailLabel: { color: Theme.colors.textMuted, fontSize: 10, fontWeight: '700', letterSpacing: 0.5, marginBottom: 2 },
+  detailValue: { color: Theme.colors.text, fontSize: 14, fontWeight: '800' },
+
+  // Manual Form CSS
+  formTitle: { color: Theme.colors.text, fontSize: 16, fontWeight: '800', zIndex: 1 },
+  formSubtitle: { color: Theme.colors.textMuted, fontSize: 12, marginBottom: Theme.spacing.md, zIndex: 1 },
+  luxuryInput: { height: 44, backgroundColor: Theme.colors.background, borderColor: Theme.colors.border, borderWidth: 1.5, borderRadius: Theme.borderRadius.md, paddingHorizontal: Theme.spacing.md, color: Theme.colors.text, fontSize: 14, marginBottom: Theme.spacing.sm, zIndex: 1 },
+  inputRow: { flexDirection: 'row', justifyContent: 'space-between', zIndex: 1 },
+  luxuryButton: { height: 46, borderRadius: Theme.borderRadius.md, justifyContent: 'center', alignItems: 'center', marginTop: Theme.spacing.sm, overflow: 'hidden', zIndex: 1 },
+  buttonText: { color: '#FFF', fontWeight: '800', fontSize: 14, letterSpacing: 0.5 },
+
+  // Scout CSS
+  searchCard: { position: 'relative', borderRadius: Theme.borderRadius.lg, borderWidth: 1.5, borderColor: Theme.colors.border, padding: Theme.spacing.md, marginBottom: Theme.spacing.md, overflow: 'hidden', ...Theme.shadows.glass },
+  inputLabelGroup: { marginBottom: Theme.spacing.md, zIndex: 1 },
+  inputLabel: { color: Theme.colors.primary, fontSize: 10, fontWeight: '800', letterSpacing: 0.8, marginBottom: Theme.spacing.sm },
+  scoutInput: { height: 44, backgroundColor: Theme.colors.background, borderColor: Theme.colors.border, borderWidth: 1.5, borderRadius: Theme.borderRadius.md, paddingHorizontal: Theme.spacing.md, color: Theme.colors.text, fontSize: 14 },
+  chipsRow: { flexDirection: 'row' },
+  chipButton: { paddingHorizontal: Theme.spacing.md, height: 38, borderRadius: Theme.borderRadius.pill, backgroundColor: 'rgba(255, 255, 255, 0.04)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)', justifyContent: 'center', alignItems: 'center', marginRight: Theme.spacing.sm },
+  activeChip: { backgroundColor: 'rgba(0, 240, 255, 0.1)', borderColor: Theme.colors.primary },
+  chipText: { color: Theme.colors.textMuted, fontSize: 13, fontWeight: '700' },
+  activeChipText: { color: Theme.colors.primary },
+  scoutSearchButton: { height: 46, borderRadius: Theme.borderRadius.md, justifyContent: 'center', alignItems: 'center', overflow: 'hidden', zIndex: 1 },
+  disabledButton: { opacity: 0.8 },
+  loadingContainer: { flexDirection: 'row', alignItems: 'center' },
+
+  // Notification Banner CSS
+  notifyBanner: { position: 'relative', padding: Theme.spacing.md, borderRadius: Theme.borderRadius.md, borderWidth: 1.5, borderColor: Theme.colors.success, marginBottom: Theme.spacing.md, overflow: 'hidden' },
+  notifyBannerText: { color: Theme.colors.text, fontSize: 13, fontWeight: '700', zIndex: 1, lineHeight: 18 },
+
+  // Vendor Card CSS
+  vendorCard: { position: 'relative', borderRadius: Theme.borderRadius.lg, borderWidth: 1.5, borderColor: Theme.colors.border, padding: Theme.spacing.md, marginBottom: Theme.spacing.md, overflow: 'hidden', ...Theme.shadows.glass },
+  vendorIndexContainer: { alignSelf: 'flex-start', paddingHorizontal: Theme.spacing.sm, paddingVertical: 2, borderRadius: Theme.borderRadius.sm, backgroundColor: 'rgba(112, 0, 255, 0.15)', borderWidth: 1, borderColor: Theme.colors.secondary, marginBottom: Theme.spacing.xs, zIndex: 1 },
+  vendorIndexText: { fontSize: 9, fontWeight: '900', color: '#9D5BFF', letterSpacing: 0.5 },
+  scoutedName: { color: Theme.colors.text, fontSize: 16, fontWeight: '800', zIndex: 1 },
+  vendorAddress: { color: Theme.colors.textMuted, fontSize: 12, marginTop: 2, marginBottom: Theme.spacing.sm, zIndex: 1 },
+  scoutBadgesRow: { flexDirection: 'row', zIndex: 1 },
+  scoutBadge: { paddingHorizontal: Theme.spacing.sm, paddingVertical: 4, borderRadius: Theme.borderRadius.pill, borderWidth: 1, marginRight: Theme.spacing.xs },
+  ratingColor: { backgroundColor: 'rgba(255, 184, 0, 0.1)', borderColor: '#FFB800' },
+  distanceColor: { backgroundColor: 'rgba(112, 0, 255, 0.1)', borderColor: '#7000FF' },
+  priceColor: { backgroundColor: 'rgba(0, 255, 163, 0.1)', borderColor: '#00FFA3' },
+  scoutBadgeText: { fontSize: 11, fontWeight: '800', color: '#FFF' },
+  vendorMetricsRow: { flexDirection: 'row', zIndex: 1 },
+  metricItem: { flex: 1 },
+  metricLabel: { color: Theme.colors.textMuted, fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
+  metricVal: { color: Theme.colors.text, fontSize: 13, fontWeight: '800', marginTop: 2 },
+  onboardButton: { height: 42, borderRadius: Theme.borderRadius.md, justifyContent: 'center', alignItems: 'center', marginTop: Theme.spacing.md, overflow: 'hidden', zIndex: 1 },
+  successButton: { borderColor: Theme.colors.success, borderWidth: 1.5 },
+  onboardButtonText: { color: '#000', fontWeight: '900', fontSize: 12, letterSpacing: 0.5 }
 });

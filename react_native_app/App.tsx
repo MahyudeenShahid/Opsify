@@ -1,17 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { SafeAreaView, StatusBar, StyleSheet, Text, View, TouchableOpacity, Animated, Easing } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { BrainCircuit, Boxes, MessageCircle } from 'lucide-react-native';
+import { BrainCircuit, Boxes, MessageCircle, Navigation } from 'lucide-react-native';
 
 import { Theme } from './src/core/theme';
 import { CustomerBrainScreen } from './src/screens/CustomerBrainScreen';
 import { InventoryDashboardScreen } from './src/screens/InventoryDashboardScreen';
 import { OmniChatScreen } from './src/screens/OmniChat/OmniChatScreen';
+import { LogisticsScreen } from './src/screens/LogisticsScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { auth } from './src/config/firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
 
-type Tab = 'customer' | 'inventory' | 'omnichat';
+type Tab = 'customer' | 'inventory' | 'omnichat' | 'logistics';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('inventory');
@@ -78,6 +79,7 @@ export default function App() {
         {activeTab === 'customer' && <CustomerBrainScreen />}
         {activeTab === 'inventory' && <InventoryDashboardScreen />}
         {activeTab === 'omnichat' && <OmniChatScreen currentUserId={user.uid} />}
+        {activeTab === 'logistics' && <LogisticsScreen />}
       </Animated.View>
 
       {/* Floating Glassmorphic Tab Navigation Bar */}
@@ -100,6 +102,12 @@ export default function App() {
             onPress={() => switchTab('omnichat')}
             icon={<MessageCircle size={24} color={activeTab === 'omnichat' ? Theme.colors.primary : Theme.colors.textMuted} />}
             label="OmniChat"
+          />
+          <NavButton 
+            isActive={activeTab === 'logistics'} 
+            onPress={() => switchTab('logistics')}
+            icon={<Navigation size={24} color={activeTab === 'logistics' ? Theme.colors.primary : Theme.colors.textMuted} />}
+            label="Dispatch"
           />
         </BlurView>
       </View>
