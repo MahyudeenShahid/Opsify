@@ -1,28 +1,28 @@
 import React from 'react';
 import { StyleSheet, Text, View, ScrollView } from 'react-native';
 import { Theme } from '../../core/theme';
+import { ProcurementApproval } from './ProcurementApproval';
 
 interface Props {
   predictions: any[];
   suggestions: any[];
+  products?: any[];
+  warehouses?: any[];
+  onProcurementApproved?: () => void;
 }
 
-export const PredictiveDashboard: React.FC<Props> = ({ predictions, suggestions }) => {
+export const PredictiveDashboard: React.FC<Props> = ({
+  predictions, suggestions, products = [], warehouses = [], onProcurementApproved
+}) => {
   return (
     <View style={styles.container}>
-      {/* Smart Reorder Suggestions */}
-      {suggestions.length > 0 && (
-        <View style={styles.alertContainer}>
-          <Text style={styles.alertHeader}>⚠️ AI Reorder Suggestions</Text>
-          {suggestions.map((sug, idx) => (
-            <View key={idx} style={styles.alertCard}>
-              <Text style={[styles.alertMessage, sug.urgency === 'High' ? styles.alertHigh : styles.alertMedium]}>
-                {sug.message}
-              </Text>
-            </View>
-          ))}
-        </View>
-      )}
+      {/* Procurement Approval Panel — appears when stock is low */}
+      <ProcurementApproval
+        suggestions={suggestions}
+        products={products}
+        warehouses={warehouses}
+        onProcurementApproved={onProcurementApproved || (() => {})}
+      />
 
       <Text style={styles.sectionTitle}>🔮 Predictive Insights</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
@@ -48,33 +48,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     marginVertical: Theme.spacing.md,
-  },
-  alertContainer: {
-    backgroundColor: 'rgba(255, 83, 118, 0.1)',
-    borderColor: Theme.colors.error,
-    borderWidth: 1.5,
-    borderRadius: Theme.borderRadius.lg,
-    padding: Theme.spacing.md,
-    marginBottom: Theme.spacing.md,
-  },
-  alertHeader: {
-    color: Theme.colors.error,
-    fontWeight: 'bold',
-    fontSize: 16,
-    marginBottom: Theme.spacing.sm,
-  },
-  alertCard: {
-    marginBottom: 4,
-  },
-  alertMessage: {
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  alertHigh: {
-    color: Theme.colors.error,
-  },
-  alertMedium: {
-    color: '#FFB86C',
   },
   horizontalScroll: {
     marginBottom: Theme.spacing.md,

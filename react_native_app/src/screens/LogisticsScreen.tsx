@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, Animated, ActivityIndicator, Alert, Dimensions,
+  Platform, Linking,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -89,9 +90,12 @@ const pipeline = StyleSheet.create({
 
 // ─── Rider Geolocation MiniMap ──────────────────────────────────────────────
 const RiderMiniMap: React.FC<{ job: any }> = ({ job }) => {
+  const [mapMode, setMapMode] = useState<'vector' | 'google'>(Platform.OS === 'web' ? 'google' : 'vector');
   const route = job.route || {};
   const origin = route.origin || { lat: 24.8138, lng: 67.0366 };
   const dest = route.destination || { lat: 24.8155, lng: 67.0327 };
+
+  const MAPS_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || process.env.EXPO_PUBLIC_FIREBASE_API_KEY || '';
 
   // Calculate scaling factors so the route coordinates fit perfectly inside the SVG box
   const minLat = Math.min(origin.lat, dest.lat) - 0.005;
@@ -121,55 +125,110 @@ const RiderMiniMap: React.FC<{ job: any }> = ({ job }) => {
   const rx = x1 + (x2 - x1) * progress;
   const ry = y1 + (y2 - y1) * progress;
 
+  const openNativeMap = () => {
+    const url = `https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lng}&destination=${dest.lat},${dest.lng}&travelmode=driving`;
+    Linking.openURL(url).catch(err => console.error("Failed to open maps", err));
+  };
+
   return (
     <View style={styles.mapWrapper}>
       <View style={styles.mapHeaderRow}>
-        <Text style={styles.mapLabel}>🛰️ LIVE GEOLOCATION ENGINE</Text>
-        <Text style={styles.mapSubLabel}>{route.source || 'Haversine Engine'}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <Text style={styles.mapLabel}>🛰️ GEOLOCATION COMMAND</Text>
+          {Platform.OS === 'web' && (
+            <View style={styles.mapToggleContainer}>
+              <TouchableOpacity 
+                style={[styles.mapToggleBtn, mapMode === 'google' && styles.mapToggleBtnActive]} 
+                onPress={() => setMapMode('google')}
+              >
+                <Text style={[styles.mapToggleText, mapMode === 'google' && styles.mapToggleTextActive]}>Google Map</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.mapToggleBtn, mapMode === 'vector' && styles.mapToggleBtnActive]} 
+                onPress={() => setMapMode('vector')}
+              >
+                <Text style={[styles.mapToggleText, mapMode === 'vector' && styles.mapToggleTextActive]}>Vector Grid</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+        <Text style={styles.mapSubLabel}>
+          {mapMode === 'google' ? 'Google Embed' : (route.source || 'Haversine Engine')}
+        </Text>
       </View>
-      <View style={styles.mapCanvas}>
-        <Svg width="100%" height={110} viewBox="0 0 300 120">
-          {/* Cyber grid background */}
-          <Rect x="0" y="0" width="300" height="120" rx={Theme.borderRadius.md} fill="#0A0B10" />
-          <Line x1="50" y1="0" x2="50" y2="120" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
-          <Line x1="100" y1="0" x2="100" y2="120" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
-          <Line x1="150" y1="0" x2="150" y2="120" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
-          <Line x1="200" y1="0" x2="200" y2="120" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
-          <Line x1="250" y1="0" x2="250" y2="120" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
+
+      {mapMode === 'google' && Platform.OS === 'web' ? (
+        <View style={{ height: 220, width: '100%', overflow: 'hidden' }}>
+          {MAPS_KEY ? (
+            <iframe
+              width="100%"
+              height="220"
+              style={{ border: 0, backgroundColor: '#0A0B10' }}
+              loading="lazy"
+              allowFullScreen
+              referrerPolicy="no-referrer-when-downgrade"
+              src={`https://www.google.com/maps/embed/v1/directions?key=${MAPS_KEY}&origin=${origin.lat},${origin.lng}&destination=${dest.lat},${dest.lng}&mode=driving`}
+            />
+          ) : (
+            <View style={[styles.mapCanvas, { height: 220, justifyContent: 'center', alignItems: 'center', padding: 16 }]}>
+              <Text style={{ color: Theme.colors.error, fontWeight: 'bold', fontSize: 13, marginBottom: 4 }}>Google Map Key Missing</Text>
+              <Text style={{ color: Theme.colors.textMuted, fontSize: 11, textAlign: 'center' }}>
+                Please set EXPO_PUBLIC_FIREBASE_API_KEY or EXPO_PUBLIC_GOOGLE_MAPS_API_KEY in your env file to load real-time Google Maps.
+              </Text>
+            </View>
+          )}
+        </View>
+      ) : (
+        <View style={styles.mapCanvas}>
+          <Svg width="100%" height={110} viewBox="0 0 300 120">
+            {/* Cyber grid background */}
+            <Rect x="0" y="0" width="300" height="120" rx={Theme.borderRadius.md} fill="#0A0B10" />
+            <Line x1="50" y1="0" x2="50" y2="120" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
+            <Line x1="100" y1="0" x2="100" y2="120" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
+            <Line x1="150" y1="0" x2="150" y2="120" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
+            <Line x1="200" y1="0" x2="200" y2="120" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
+            <Line x1="250" y1="0" x2="250" y2="120" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
+            
+            <Line x1="0" y1="30" x2="300" y2="30" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
+            <Line x1="0" y1="60" x2="300" y2="60" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
+            <Line x1="0" y1="90" x2="300" y2="90" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
+
+            {/* Route path line */}
+            <Line
+              x1={x1}
+              y1={y1}
+              x2={x2}
+              y2={y2}
+              stroke={Theme.colors.primary}
+              strokeWidth="2.5"
+              strokeDasharray="4,4"
+            />
+
+            {/* Origin Depot Marker */}
+            <Circle cx={x1} cy={y1} r="7" fill={Theme.colors.secondary} opacity={0.3} />
+            <Circle cx={x1} cy={y1} r="4" fill={Theme.colors.secondary} />
+            <SvgText x={x1 - 15} y={y1 - 10} fill={Theme.colors.secondary} fontSize="8" fontWeight="bold">DEPOT</SvgText>
+
+            {/* Destination Customer Marker */}
+            <Circle cx={x2} cy={y2} r="9" fill={Theme.colors.success} opacity={0.2} />
+            <Circle cx={x2} cy={y2} r="5" fill={Theme.colors.success} />
+            <SvgText x={x2 - 15} y={y2 + 16} fill={Theme.colors.success} fontSize="8" fontWeight="bold">CLIENT</SvgText>
+
+            {/* Pulsing Active Rider Vehicle */}
+            <G>
+              <Circle cx={rx} cy={ry} r="8" fill={Theme.colors.warning} opacity={0.4} />
+              <Circle cx={rx} cy={ry} r="5" fill={Theme.colors.warning} />
+              <SvgText x={rx - 12} y={ry - 8} fill={Theme.colors.warning} fontSize="7" fontWeight="bold">RIDER</SvgText>
+            </G>
+          </Svg>
           
-          <Line x1="0" y1="30" x2="300" y2="30" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
-          <Line x1="0" y1="60" x2="300" y2="60" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
-          <Line x1="0" y1="90" x2="300" y2="90" stroke="rgba(0,240,255,0.03)" strokeWidth="1" />
-
-          {/* Route path line */}
-          <Line
-            x1={x1}
-            y1={y1}
-            x2={x2}
-            y2={y2}
-            stroke={Theme.colors.primary}
-            strokeWidth="2.5"
-            strokeDasharray="4,4"
-          />
-
-          {/* Origin Depot Marker */}
-          <Circle cx={x1} cy={y1} r="7" fill={Theme.colors.secondary} opacity={0.3} />
-          <Circle cx={x1} cy={y1} r="4" fill={Theme.colors.secondary} />
-          <SvgText x={x1 - 15} y={y1 - 10} fill={Theme.colors.secondary} fontSize="8" fontWeight="bold">DEPOT</SvgText>
-
-          {/* Destination Customer Marker */}
-          <Circle cx={x2} cy={y2} r="9" fill={Theme.colors.success} opacity={0.2} />
-          <Circle cx={x2} cy={y2} r="5" fill={Theme.colors.success} />
-          <SvgText x={x2 - 15} y={y2 + 16} fill={Theme.colors.success} fontSize="8" fontWeight="bold">CLIENT</SvgText>
-
-          {/* Pulsing Active Rider Vehicle */}
-          <G>
-            <Circle cx={rx} cy={ry} r="8" fill={Theme.colors.warning} opacity={0.4} />
-            <Circle cx={rx} cy={ry} r="5" fill={Theme.colors.warning} />
-            <SvgText x={rx - 12} y={ry - 8} fill={Theme.colors.warning} fontSize="7" fontWeight="bold">RIDER</SvgText>
-          </G>
-        </Svg>
-      </View>
+          {Platform.OS !== 'web' && (
+            <TouchableOpacity style={styles.nativeMapBtn} onPress={openNativeMap}>
+              <Text style={styles.nativeMapBtnText}>🗺️ Open Live Google Maps Navigation</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
     </View>
   );
 };
@@ -560,4 +619,15 @@ const styles = StyleSheet.create({
   // Advance button
   advanceBtn:     { height: 44, borderRadius: Theme.borderRadius.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   advanceBtnText: { color: '#000', fontWeight: '900', fontSize: 12, letterSpacing: 0.5, marginRight: 4 },
+
+  // Interactive Maps Toggles
+  mapToggleContainer: { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: Theme.borderRadius.sm, padding: 2, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  mapToggleBtn:       { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4 },
+  mapToggleBtnActive: { backgroundColor: Theme.colors.primary },
+  mapToggleText:       { color: Theme.colors.textMuted, fontSize: 8.5, fontWeight: '700' },
+  mapToggleTextActive: { color: '#000' },
+
+  // Native Client fallbacks
+  nativeMapBtn:     { margin: Theme.spacing.sm, height: 38, backgroundColor: 'rgba(0, 240, 255, 0.1)', borderWidth: 1.5, borderColor: Theme.colors.primary, borderRadius: Theme.borderRadius.md, justifyContent: 'center', alignItems: 'center' },
+  nativeMapBtnText: { color: Theme.colors.primary, fontWeight: '900', fontSize: 11, letterSpacing: 0.3 },
 });

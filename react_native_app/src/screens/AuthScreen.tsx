@@ -93,15 +93,16 @@ export const AuthScreen = ({ onDemoLogin }: { onDemoLogin: () => void }) => {
   };
 
   const handleGoogleAuth = async () => {
-    if (Platform.OS !== 'web') {
-      Alert.alert('Notice', 'Google Auth on native requires specific Expo modules. Use the Web build for this MVP feature.');
-      return;
-    }
     setIsLoading(true);
     try {
-      const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      await FirebaseChatService.createUser(result.user.uid, result.user.displayName || 'Google User', result.user.email || '');
+      if (Platform.OS === 'web') {
+        const provider = new GoogleAuthProvider();
+        const result = await signInWithPopup(auth, provider);
+        await FirebaseChatService.createUser(result.user.uid, result.user.displayName || 'Google User', result.user.email || '');
+      } else {
+        // Native Google Authentication flow via Expo prompt
+        await promptAsync();
+      }
     } catch (e: any) {
       Alert.alert('Google Auth Error', e.message);
     } finally {

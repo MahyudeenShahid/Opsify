@@ -60,14 +60,14 @@ def run_tests():
 
     print("\nDemand Predictions:")
     for pred in get_demand_predictions():
-        print(f"  {pred['name']}: {pred['daily_velocity']} {pred['unit']}/day → stockout: {pred['estimated_stockout_date']}")
+        print(f"  {pred['name']}: {pred['daily_velocity']} {pred['unit']}/day -> stockout: {pred['estimated_stockout_date']}")
 
     print("\nReorder Suggestions:")
     for sug in get_reorder_suggestions():
         print(f"  [{sug['urgency']}] {sug['message']}")
 
     print("\n" + "=" * 60)
-    print("ALL INVENTORY TESTS PASSED ✅")
+    print("ALL INVENTORY TESTS PASSED [OK]")
 
     try:
         os.unlink(_TEST_DB)

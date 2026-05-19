@@ -280,7 +280,7 @@ export const SupplierManager: React.FC = () => {
               <Animated.View style={[styles.notifyBanner, { opacity: notifyOpacity, transform: [{ scale: notifyScale }] }]}>
                 <LinearGradient colors={['rgba(0, 255, 163, 0.15)', 'rgba(0, 240, 255, 0.05)']} style={[StyleSheet.absoluteFill, { borderRadius: Theme.borderRadius.md }]} />
                 <Text style={styles.notifyBannerText}>
-                  ✨ **SATELLITE RADAR SUCCESS**: Found exactly **5 verified Wholesalers** in {scoutLocation} sorted by Rating, Distance, and wholesale price! Choose the best option to onboard.
+                  ✨ **SATELLITE RADAR SUCCESS**: Found exactly **{scoutResults.length} verified Wholesalers** in "{scoutLocation}" matching "{scoutQuery}"! Choose the best option to onboard.
                 </Text>
               </Animated.View>
             )}

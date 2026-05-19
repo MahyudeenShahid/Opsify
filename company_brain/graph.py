@@ -1,7 +1,6 @@
 import json
 from datetime import datetime, timedelta
 from company_brain.inventory import get_db_connection, record_sale
-from agents.bidding_agent import execute_geographical_bidding
 from broker.event_broker import broker
 import asyncio
 
@@ -60,7 +59,7 @@ class CompanyBrainGraph:
                     if current_stock <= reorder_threshold:
                         cursor.execute("SELECT location FROM warehouses WHERE id = ?", (warehouse_id,))
                         wh_location = cursor.fetchone()["location"]
-                        await self._trigger_genai_bidding(cursor, product, current_stock, wh_location)
+                        await self._trigger_genai_bidding(cursor, product, warehouse_id, current_stock, wh_location)
                 else:
                     dispatch_status = "ERROR_PRODUCT_NOT_IN_WAREHOUSE"
             
@@ -89,29 +88,25 @@ class CompanyBrainGraph:
         except Exception as e:
             return json.dumps({"status": "ERROR", "message": str(e)})
             
-    async def _trigger_genai_bidding(self, cursor, product, current_stock, warehouse_location):
+    async def _trigger_genai_bidding(self, cursor, product, warehouse_id, current_stock, warehouse_location):
         product_id = product["id"]
-        thirty_days_ago = (datetime.now() - timedelta(days=30)).isoformat()
         
-        cursor.execute("SELECT SUM(quantity) FROM transactions WHERE product_id = ? AND type = 'SALE' AND timestamp >= ?", 
-                       (product_id, thirty_days_ago))
-        row = cursor.fetchone()
-        sold = row[0] if row and row[0] else 0.0
-        daily_velocity = sold / 30.0 if sold > 0 else 0.5
-        
-        days_remaining = current_stock / daily_velocity if daily_velocity > 0 else 999
-        urgency = "HIGH" if days_remaining <= 2 else "LOW"
+        from agents.bidding_agent import generate_procurement_suggestions
         
         await broker.publish("SYSTEM_LOG", "ProcurementEngine", {
-            "message": f"Reorder threshold tripped for {product['name']} at {warehouse_location}. Urgency: {urgency}. Invoking GenAI Bidding Agent..."
+            "message": f"Reorder threshold tripped for {product['name']} at {warehouse_location}. Extracting Top 5 Suppliers from Live Map API..."
         })
         
-        # Call the standalone AI Agent
-        decision = execute_geographical_bidding(product["name"], warehouse_location, urgency)
+        lat, lng = 24.8607, 67.0011 # default Karachi
+        if warehouse_location.lower() == "lahore":
+            lat, lng = 31.5204, 74.3587
+            
+        suggestions = generate_procurement_suggestions(product["name"], lat, lng)
         
-        await broker.publish("PROCUREMENT_DECISION", "BiddingAgent", {
-            "product": product["name"],
-            "selected_vendor": decision["vendor"],
-            "reason": decision["reason"],
-            "agent_type": decision["agent"]
+        await broker.publish("PROCUREMENT_SUGGESTION", "ProcurementEngine", {
+            "product_id": product_id,
+            "product_name": product["name"],
+            "warehouse_id": warehouse_id,
+            "warehouse_location": warehouse_location,
+            "suggestions": suggestions
         })

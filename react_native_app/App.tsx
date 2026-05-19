@@ -1,19 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { SafeAreaView, StatusBar, StyleSheet, Text, View, TouchableOpacity, Animated, Easing } from 'react-native';
+import { SafeAreaView, StatusBar, StyleSheet, Text, View, TouchableOpacity, Animated, Easing, Modal } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { BrainCircuit, Boxes, MessageCircle, Navigation } from 'lucide-react-native';
+import { BrainCircuit, Boxes, MessageCircle, Navigation, Bot } from 'lucide-react-native';
 
 import { Theme } from './src/core/theme';
 import { CustomerBrainScreen } from './src/screens/CustomerBrainScreen';
 import { InventoryDashboardScreen } from './src/screens/InventoryDashboardScreen';
 import { OmniChatScreen } from './src/screens/OmniChat/OmniChatScreen';
 import { LogisticsScreen } from './src/screens/LogisticsScreen';
+import { ChatScreen } from './src/screens/ChatScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { auth } from './src/config/firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
 
-type Tab = 'customer' | 'inventory' | 'omnichat' | 'logistics';
+type Tab = 'customer' | 'inventory' | 'omnichat' | 'logistics' | 'opsbot';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('inventory');
@@ -21,6 +22,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   // Animation values
+  const [isChatOpen, setIsChatOpen] = useState(false);
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
@@ -89,6 +91,9 @@ export default function App() {
         <ErrorBoundary fallbackTitle="Dispatch Error">
           {activeTab === 'logistics' && <LogisticsScreen />}
         </ErrorBoundary>
+        <ErrorBoundary fallbackTitle="OpsBot Error">
+          {activeTab === 'opsbot' && <ChatScreen />}
+        </ErrorBoundary>
       </Animated.View>
 
       {/* Floating Glassmorphic Tab Navigation Bar */}
@@ -118,8 +123,36 @@ export default function App() {
             icon={<Navigation size={24} color={activeTab === 'logistics' ? Theme.colors.primary : Theme.colors.textMuted} />}
             label="Dispatch"
           />
+          <NavButton 
+            isActive={activeTab === 'opsbot'} 
+            onPress={() => switchTab('opsbot')}
+            icon={<Bot size={24} color={activeTab === 'opsbot' ? Theme.colors.primary : Theme.colors.textMuted} />}
+            label="OpsBot"
+          />
         </BlurView>
       </View>
+      {/* Floating Chatbot Button */}
+      <TouchableOpacity 
+        style={styles.floatingChatButton} 
+        onPress={() => setIsChatOpen(true)}
+        activeOpacity={0.8}
+      >
+        <Bot size={28} color={Theme.colors.background} />
+      </TouchableOpacity>
+
+      {/* Floating Chatbot Modal Overlay */}
+      <Modal
+        visible={isChatOpen}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsChatOpen(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <BlurView intensity={90} tint="dark" style={styles.modalContent}>
+            <ChatScreen onClose={() => setIsChatOpen(false)} />
+          </BlurView>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -205,5 +238,37 @@ const styles = StyleSheet.create({
   navTextActive: {
     color: Theme.colors.primary,
     fontWeight: 'bold',
-  }
+  },
+  floatingChatButton: {
+    position: 'absolute',
+    bottom: 110,
+    right: 24,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: Theme.colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: Theme.colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    width: '100%',
+    height: '92%',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+  },
 });

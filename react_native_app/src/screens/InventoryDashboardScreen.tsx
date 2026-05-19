@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View, ScrollView, ActivityIndicator, Alert, Animated } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View, ScrollView, ActivityIndicator, Alert, Animated, TextInput, Linking } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { CloudSync, RefreshCw, BarChart2, Package, Users, FileText } from 'lucide-react-native';
+import { Download, RefreshCw, BarChart2, Package, Users, FileText, Check, Link } from 'lucide-react-native';
 
 import { Theme } from '../core/theme';
 import { ApiService } from '../services/api';
@@ -22,7 +22,7 @@ const TABS: { id: SubTab, label: string, icon: any }[] = [
 export const InventoryDashboardScreen: React.FC = () => {
   const [activeTab, setActiveTab] = useState<SubTab>('insights');
   const [isLoading, setIsLoading] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [isDownloadingCSV, setIsDownloadingCSV] = useState(false);
 
   // Global State for UI
   const [inventory, setInventory] = useState<any[]>([]);
@@ -61,15 +61,17 @@ export const InventoryDashboardScreen: React.FC = () => {
 
   useEffect(() => { fetchData(); }, []);
 
-  const handleSyncSheets = async () => {
-    setIsSyncing(true);
+  const handleDownloadCSV = async () => {
+    setIsDownloadingCSV(true);
     try {
-      const res = await ApiService.syncSheets();
-      Alert.alert(res.fallback ? "Fallback Active" : "Sync Success", res.message);
+      const url = `http://localhost:8000/api/export/csv`;
+      Linking.openURL(url).catch(err => {
+        Alert.alert("Failed to open URL", err.message);
+      });
     } catch (e: any) {
-      Alert.alert("Sync Failed", e.message);
+      Alert.alert("Download Failed", e.message);
     } finally {
-      setIsSyncing(false);
+      setIsDownloadingCSV(false);
     }
   };
 
@@ -82,8 +84,8 @@ export const InventoryDashboardScreen: React.FC = () => {
         </View>
         
         <View style={styles.headerButtons}>
-          <TouchableOpacity style={styles.actionBtn} onPress={handleSyncSheets} disabled={isSyncing}>
-            {isSyncing ? <ActivityIndicator size="small" color={Theme.colors.primary} /> : <CloudSync color={Theme.colors.primary} size={20} />}
+          <TouchableOpacity style={styles.actionBtn} onPress={handleDownloadCSV} disabled={isDownloadingCSV}>
+            {isDownloadingCSV ? <ActivityIndicator size="small" color={Theme.colors.primary} /> : <Download color={Theme.colors.primary} size={20} />}
           </TouchableOpacity>
           <TouchableOpacity style={styles.actionBtn} onPress={fetchData}>
             <RefreshCw color={Theme.colors.textMuted} size={20} />
@@ -121,7 +123,13 @@ export const InventoryDashboardScreen: React.FC = () => {
           </View>
         ) : (
           <Animated.View style={{ opacity: contentOpacity }}>
-            {activeTab === 'insights' && <PredictiveDashboard predictions={predictions} suggestions={suggestions} />}
+            {activeTab === 'insights' && <PredictiveDashboard
+              predictions={predictions}
+              suggestions={suggestions}
+              products={inventory}
+              warehouses={warehouses}
+              onProcurementApproved={fetchData}
+            />}
             {activeTab === 'products' && <ProductManager inventory={inventory} onRefresh={fetchData} />}
             {activeTab === 'suppliers' && <SupplierManager />}
             {activeTab === 'transactions' && <TransactionManager ledger={ledger} onRefresh={fetchData} />}
@@ -174,6 +182,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     ...Theme.shadows.glow,
   },
+
+
   tabWrapper: {
     marginHorizontal: Theme.spacing.md,
     marginBottom: Theme.spacing.lg,

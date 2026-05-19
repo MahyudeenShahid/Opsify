@@ -45,7 +45,7 @@ def run_tests():
     }})
     print(json.dumps(json.loads(out), indent=2))
     assert json.loads(out)["payload"]["dispatch_status"] in ("READY", "DELAYED_OUT_OF_STOCK")
-    print("✅ Scenario 1 PASSED")
+    print("[OK] Scenario 1 PASSED")
 
     # Scenario 2: URGENCY HIGH — stock at 3, order 3 more → 0 left, HIGH urgency
     print("\n--- SCENARIO 2: HIGH URGENCY PROCUREMENT ---")
@@ -54,7 +54,7 @@ def run_tests():
         "total_value": 450.0, "provider_id": "internal"
     }})
     print(json.dumps(json.loads(out), indent=2))
-    print("✅ Scenario 2 PASSED")
+    print("[OK] Scenario 2 PASSED")
 
     # Scenario 3: OUT OF STOCK — stock is 0
     print("\n--- SCENARIO 3: OUT OF STOCK ---")
@@ -65,10 +65,10 @@ def run_tests():
     result = json.loads(out)
     print(json.dumps(result, indent=2))
     assert result["payload"]["dispatch_status"] == "DELAYED_OUT_OF_STOCK"
-    print("✅ Scenario 3 PASSED")
+    print("[OK] Scenario 3 PASSED")
 
     print("\n" + "=" * 60)
-    print("ALL SCENARIOS PASSED ✅")
+    print("ALL SCENARIOS PASSED [OK]")
 
     # Cleanup temp DB
     try:

@@ -13,9 +13,8 @@ const getBaseUrl = () => {
 
 const BASE_URL = getBaseUrl();
 
-// Reads OPSIFY_API_KEY from environment (set in .env or expo constants).
-// If not set, requests are still sent (API key auth is optional on backend).
-const API_KEY = (typeof process !== 'undefined' && process.env?.OPSIFY_API_KEY) || '';
+// Reads EXPO_PUBLIC_OPSIFY_API_KEY or OPSIFY_API_KEY from environment.
+const API_KEY = (typeof process !== 'undefined' && (process.env?.EXPO_PUBLIC_OPSIFY_API_KEY || process.env?.OPSIFY_API_KEY)) || '';
 
 const authHeaders = (): Record<string, string> => {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -48,8 +47,12 @@ export const ApiService = {
     return response.json();
   },
 
-  async syncSheets(): Promise<any> {
-    const response = await fetch(`${BASE_URL}/sheets/sync`, { method: 'POST', headers: authHeaders() });
+  async syncSheets(sheetName?: string): Promise<any> {
+    const response = await fetch(`${BASE_URL}/sheets/sync`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ sheet_name: sheetName || null }),
+    });
     if (!response.ok) throw new Error('Failed to sync sheets');
     return response.json();
   },
@@ -199,4 +202,52 @@ export const ApiService = {
     const res = await response.json();
     return res.zones;
   },
+
+  // ─── System 2: Procurement & Chat ────────────────────────────────────────
+  async getSupplierSuggestions(productName: string, lat: number, lng: number): Promise<any[]> {
+    const response = await fetch(`${BASE_URL}/procurement/suggest`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ product_name: productName, lat, lng }),
+    });
+    if (!response.ok) throw new Error('Failed to fetch vendor suggestions');
+    const res = await response.json();
+    return res.suggestions;
+  },
+
+  async approveProcurement(data: {
+    product_id: number;
+    warehouse_id: number;
+    quantity: number;
+    vendor: any;
+  }): Promise<any> {
+    const response = await fetch(`${BASE_URL}/procurement/approve`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.detail || 'Procurement approval failed');
+    }
+    return response.json();
+  },
+
+  async sendChatMessage(messages: { role: 'user' | 'assistant'; content: string }[]): Promise<any> {
+    const response = await fetch(`${BASE_URL}/chat`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ messages }),
+    });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.detail || 'Chat failed');
+    }
+    return response.json();
+  },
+
+  getExportCsvUrl(): string {
+    return `${BASE_URL}/export/csv`;
+  },
 };
+
