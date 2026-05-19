@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { SafeAreaView, StatusBar, StyleSheet, Text, View, TouchableOpacity, Animated, Easing, Modal } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { BrainCircuit, Boxes, MessageCircle, Navigation, Bot } from 'lucide-react-native';
+import { BrainCircuit, Boxes, MessageCircle, Navigation, Bot, TrendingUp } from 'lucide-react-native';
 
 import { Theme } from './src/core/theme';
 import { CustomerBrainScreen } from './src/screens/CustomerBrainScreen';
@@ -10,12 +10,13 @@ import { OmniChatScreen } from './src/screens/OmniChat/OmniChatScreen';
 import { LogisticsScreen } from './src/screens/LogisticsScreen';
 import { ChatScreen } from './src/screens/ChatScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
+import { ERPAgentScreen } from './src/screens/ERPAgentScreen';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { auth } from './src/config/firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
 import { FirebaseChatService } from './src/services/firebaseChatService';
 
-type Tab = 'customer' | 'inventory' | 'omnichat' | 'logistics' | 'opsbot';
+type Tab = 'customer' | 'inventory' | 'omnichat' | 'logistics' | 'opsbot' | 'erpagent';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('inventory');
@@ -104,6 +105,9 @@ export default function App() {
         <ErrorBoundary fallbackTitle="OpsBot Error">
           {activeTab === 'opsbot' && <ChatScreen currentUserId={user.uid} />}
         </ErrorBoundary>
+        <ErrorBoundary fallbackTitle="ERP Agent Error">
+          {activeTab === 'erpagent' && <ERPAgentScreen />}
+        </ErrorBoundary>
       </Animated.View>
 
       {/* Floating Glassmorphic Tab Navigation Bar */}
@@ -138,6 +142,12 @@ export default function App() {
             onPress={() => switchTab('opsbot')}
             icon={<Bot size={24} color={activeTab === 'opsbot' ? Theme.colors.primary : Theme.colors.textMuted} />}
             label="OpsBot"
+          />
+          <NavButton 
+            isActive={activeTab === 'erpagent'} 
+            onPress={() => switchTab('erpagent')}
+            icon={<TrendingUp size={24} color={activeTab === 'erpagent' ? Theme.colors.primary : Theme.colors.textMuted} />}
+            label="Agent"
           />
         </BlurView>
       </View>

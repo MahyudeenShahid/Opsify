@@ -227,5 +227,80 @@ export const FirebaseChatService = {
          await updateDoc(docSnap.ref, { status: 'read' });
       }
     }
-  }
+  },
+
+  /**
+   * Fetch ALL messages from a chat thread for deep scanning.
+   * Returns messages with ISO timestamp strings for cursor comparison.
+   */
+  async getFullMessages(chatId: string, senderNames: Record<string, string> = {}): Promise<any[]> {
+    const q = query(
+      collection(db, `chats/${chatId}/messages`),
+      orderBy('timestamp', 'asc')
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map(docSnap => {
+      const data = docSnap.data();
+      const ts = data.timestamp;
+      let timestamp_iso = '';
+      try {
+        if (ts && typeof ts.toDate === 'function') {
+          timestamp_iso = ts.toDate().toISOString();
+        } else if (ts) {
+          timestamp_iso = new Date(ts).toISOString();
+        }
+      } catch {}
+      return {
+        id: docSnap.id,
+        text: data.text || '',
+        senderId: data.senderId || '',
+        senderName: senderNames[data.senderId] || data.senderId || 'unknown',
+        timestamp_iso,
+        status: data.status || 'sent',
+      };
+    });
+  },
+
+  /**
+   * Get all chats with their full message history — for System 1 deep scan.
+   */
+  async getAllChatsWithMessages(userId: string): Promise<any[]> {
+    const chatsRef = query(
+      collection(db, 'chats'),
+      where('participants', 'array-contains', userId)
+    );
+    const chatsSnap = await getDocs(chatsRef);
+    const result: any[] = [];
+
+    for (const chatDoc of chatsSnap.docs) {
+      const data = chatDoc.data();
+      const participants: string[] = data.participants || [];
+
+      // Resolve other user names
+      const senderNames: Record<string, string> = {};
+      const otherParticipants = participants.filter(pid => pid !== userId);
+      for (const pid of otherParticipants) {
+        const u = await this.getUser(pid);
+        if (u) senderNames[pid] = u.name;
+      }
+      senderNames[userId] = 'me';
+
+      const messages = await this.getFullMessages(chatDoc.id, senderNames);
+
+      const users = Object.entries(senderNames)
+        .filter(([uid]) => uid !== userId)
+        .map(([uid, name]) => ({ uid, name }));
+
+      result.push({
+        id: chatDoc.id,
+        users,
+        messages,
+        lastMessage: data.lastMessage || '',
+        updatedAt: data.updatedAt || null,
+      });
+    }
+
+    return result;
+  },
 };
+

@@ -1,56 +1,63 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View, ScrollView, ActivityIndicator, Alert, Animated, TextInput, Linking } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View, ScrollView, ActivityIndicator, Alert, Animated, Linking } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { Download, RefreshCw, BarChart2, Package, Users, FileText, Check, Link } from 'lucide-react-native';
+import { Download, RefreshCw, LayoutDashboard, Package, Users, FileText, ShoppingCart, TrendingUp } from 'lucide-react-native';
 
 import { Theme } from '../core/theme';
 import { ApiService } from '../services/api';
-import { PredictiveDashboard } from '../components/inventory/PredictiveDashboard';
+import { OverviewDashboard } from '../components/inventory/OverviewDashboard';
 import { ProductManager } from '../components/inventory/ProductManager';
 import { SupplierManager } from '../components/inventory/SupplierManager';
 import { TransactionManager } from '../components/inventory/TransactionManager';
+import { OrderManager } from '../components/inventory/OrderManager';
+import { SalesManager } from '../components/inventory/SalesManager';
 
-type SubTab = 'insights' | 'products' | 'suppliers' | 'transactions';
+type SubTab = 'overview' | 'stock' | 'orders' | 'sales' | 'suppliers' | 'ledger';
 
-const TABS: { id: SubTab, label: string, icon: any }[] = [
-  { id: 'insights', label: 'Insights', icon: BarChart2 },
-  { id: 'products', label: 'Products', icon: Package },
-  { id: 'suppliers', label: 'Suppliers', icon: Users },
-  { id: 'transactions', label: 'Ledger', icon: FileText }
+const TABS: { id: SubTab; label: string; icon: any }[] = [
+  { id: 'overview',   label: 'Overview',   icon: LayoutDashboard },
+  { id: 'stock',      label: 'Stock',      icon: Package },
+  { id: 'orders',     label: 'Orders',     icon: ShoppingCart },
+  { id: 'sales',      label: 'Sales',      icon: TrendingUp },
+  { id: 'suppliers',  label: 'Suppliers',  icon: Users },
+  { id: 'ledger',     label: 'Ledger',     icon: FileText },
 ];
 
 export const InventoryDashboardScreen: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<SubTab>('insights');
+  const [activeTab, setActiveTab] = useState<SubTab>('overview');
   const [isLoading, setIsLoading] = useState(false);
   const [isDownloadingCSV, setIsDownloadingCSV] = useState(false);
 
-  // Global State for UI
   const [inventory, setInventory] = useState<any[]>([]);
   const [ledger, setLedger] = useState<any[]>([]);
   const [predictions, setPredictions] = useState<any[]>([]);
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [orders, setOrders] = useState<any[]>([]);
+  const [profitSummary, setProfitSummary] = useState<any>(null);
 
-  // Animations
   const contentOpacity = useRef(new Animated.Value(0)).current;
 
   const fetchData = async () => {
     setIsLoading(true);
     Animated.timing(contentOpacity, { toValue: 0, duration: 200, useNativeDriver: true }).start();
     try {
-      const [inv, led, preds, suggs, wh] = await Promise.all([
+      const [inv, led, preds, suggs, wh, ords, profit] = await Promise.all([
         ApiService.getProducts(),
         ApiService.getTransactions(),
         ApiService.getDemandPredictions(),
         ApiService.getReorderSuggestions(),
-        ApiService.getWarehouses()
+        ApiService.getWarehouses(),
+        ApiService.getOrders().catch(() => []),
+        ApiService.getProfitSummary().catch(() => null),
       ]);
       setInventory(inv);
       setLedger(led);
       setPredictions(preds);
       setSuggestions(suggs);
       setWarehouses(wh);
-      
+      setOrders(ords);
+      setProfitSummary(profit);
       Animated.timing(contentOpacity, { toValue: 1, duration: 400, useNativeDriver: true }).start();
     } catch (e: any) {
       console.error(e);
@@ -65,74 +72,111 @@ export const InventoryDashboardScreen: React.FC = () => {
     setIsDownloadingCSV(true);
     try {
       const url = `http://localhost:8000/api/export/csv`;
-      Linking.openURL(url).catch(err => {
-        Alert.alert("Failed to open URL", err.message);
-      });
+      Linking.openURL(url).catch(err => Alert.alert('Failed to open URL', err.message));
     } catch (e: any) {
-      Alert.alert("Download Failed", e.message);
+      Alert.alert('Download Failed', e.message);
     } finally {
       setIsDownloadingCSV(false);
     }
   };
 
+  const pendingOrders = orders.filter(o => o.status === 'PENDING').length;
+  const lowStockCount = suggestions.length;
+
   return (
     <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>Data Ledger</Text>
-          <Text style={styles.subtitle}>Inventory & Analytics Hub</Text>
+          <Text style={styles.title}>ERP Hub</Text>
+          <Text style={styles.subtitle}>BUSINESS OPERATIONS CENTER</Text>
         </View>
-        
         <View style={styles.headerButtons}>
+          {/* Live status badges */}
+          {pendingOrders > 0 && (
+            <TouchableOpacity style={[styles.badge, { borderColor: Theme.colors.secondary }]} onPress={() => setActiveTab('orders')}>
+              <Text style={[styles.badgeText, { color: Theme.colors.secondary }]}>📋 {pendingOrders}</Text>
+            </TouchableOpacity>
+          )}
+          {lowStockCount > 0 && (
+            <TouchableOpacity style={[styles.badge, { borderColor: Theme.colors.error }]} onPress={() => setActiveTab('stock')}>
+              <Text style={[styles.badgeText, { color: Theme.colors.error }]}>⚠️ {lowStockCount}</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity style={styles.actionBtn} onPress={handleDownloadCSV} disabled={isDownloadingCSV}>
-            {isDownloadingCSV ? <ActivityIndicator size="small" color={Theme.colors.primary} /> : <Download color={Theme.colors.primary} size={20} />}
+            {isDownloadingCSV ? <ActivityIndicator size="small" color={Theme.colors.primary} /> : <Download color={Theme.colors.primary} size={18} />}
           </TouchableOpacity>
           <TouchableOpacity style={styles.actionBtn} onPress={fetchData}>
-            <RefreshCw color={Theme.colors.textMuted} size={20} />
+            <RefreshCw color={Theme.colors.textMuted} size={18} />
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Glassmorphic Tab Container */}
+      {/* Scrollable Tab Bar */}
       <View style={styles.tabWrapper}>
         <BlurView intensity={30} tint="dark" style={styles.tabContainer}>
-          {TABS.map((tab) => {
-            const isActive = activeTab === tab.id;
-            const Icon = tab.icon;
-            return (
-              <TouchableOpacity 
-                key={tab.id}
-                style={[styles.tabButton, isActive && styles.tabButtonActive]}
-                onPress={() => setActiveTab(tab.id)}
-              >
-                <Icon size={16} color={isActive ? '#FFF' : Theme.colors.textMuted} style={{ marginRight: 6 }} />
-                <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
-                  {tab.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabScroll}>
+            {TABS.map((tab) => {
+              const isActive = activeTab === tab.id;
+              const Icon = tab.icon;
+              return (
+                <TouchableOpacity
+                  key={tab.id}
+                  style={[styles.tabButton, isActive && styles.tabButtonActive]}
+                  onPress={() => setActiveTab(tab.id)}
+                >
+                  <Icon size={14} color={isActive ? '#FFF' : Theme.colors.textMuted} />
+                  <Text style={[styles.tabText, isActive && styles.tabTextActive]}>{tab.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
         </BlurView>
       </View>
 
+      {/* Content Area */}
       <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
         {isLoading ? (
           <View style={styles.loaderContainer}>
             <ActivityIndicator size="large" color={Theme.colors.primary} />
-            <Text style={styles.loaderText}>Syncing Ledger Nodes...</Text>
+            <Text style={styles.loaderText}>Syncing ERP Data...</Text>
           </View>
         ) : (
           <Animated.View style={{ opacity: contentOpacity }}>
-            {activeTab === 'insights' && <PredictiveDashboard
-              predictions={predictions}
-              suggestions={suggestions}
-              products={inventory}
-              warehouses={warehouses}
-              onProcurementApproved={fetchData}
-            />}
-            {activeTab === 'products' && <ProductManager inventory={inventory} onRefresh={fetchData} />}
+            {activeTab === 'overview' && (
+              <OverviewDashboard
+                profitSummary={profitSummary}
+                suggestions={suggestions}
+                inventory={inventory}
+                orders={orders}
+                onRecordSale={() => setActiveTab('sales')}
+                onAddStock={() => setActiveTab('stock')}
+                onNewOrder={() => setActiveTab('orders')}
+                onRefresh={fetchData}
+              />
+            )}
+            {activeTab === 'stock' && (
+              <ProductManager inventory={inventory} onRefresh={fetchData} />
+            )}
+            {activeTab === 'orders' && (
+              <OrderManager
+                orders={orders}
+                inventory={inventory}
+                warehouses={warehouses}
+                onRefresh={fetchData}
+              />
+            )}
+            {activeTab === 'sales' && (
+              <SalesManager
+                ledger={ledger}
+                inventory={inventory}
+                onRefresh={fetchData}
+              />
+            )}
             {activeTab === 'suppliers' && <SupplierManager />}
-            {activeTab === 'transactions' && <TransactionManager ledger={ledger} onRefresh={fetchData} />}
+            {activeTab === 'ledger' && (
+              <TransactionManager ledger={ledger} onRefresh={fetchData} />
+            )}
           </Animated.View>
         )}
       </ScrollView>
@@ -141,98 +185,67 @@ export const InventoryDashboardScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: 'transparent',
-  },
+  container: { flex: 1, backgroundColor: 'transparent' },
+
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: Theme.spacing.md,
     paddingTop: Theme.spacing.lg,
-    paddingBottom: Theme.spacing.md,
+    paddingBottom: Theme.spacing.sm,
   },
-  title: {
-    color: '#FFF',
-    fontSize: 32,
-    fontWeight: '900',
-    letterSpacing: 1,
-  },
-  subtitle: {
-    color: Theme.colors.primary,
-    fontSize: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 2,
-    marginTop: 2,
-  },
-  headerButtons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
+  title: { color: '#FFF', fontSize: 30, fontWeight: '900', letterSpacing: 1 },
+  subtitle: { color: Theme.colors.primary, fontSize: 10, textTransform: 'uppercase', letterSpacing: 2, marginTop: 2 },
+  headerButtons: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   actionBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: Theme.borderRadius.pill,
-    backgroundColor: Theme.colors.surface,
-    borderWidth: 1,
-    borderColor: Theme.colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Theme.shadows.glow,
+    width: 40, height: 40, borderRadius: Theme.borderRadius.pill,
+    backgroundColor: Theme.colors.surface, borderWidth: 1, borderColor: Theme.colors.border,
+    alignItems: 'center', justifyContent: 'center',
   },
-
+  badge: {
+    paddingHorizontal: 10, height: 30, borderRadius: Theme.borderRadius.pill,
+    backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  badgeText: { fontSize: 11, fontWeight: '800' },
 
   tabWrapper: {
     marginHorizontal: Theme.spacing.md,
-    marginBottom: Theme.spacing.lg,
+    marginBottom: Theme.spacing.md,
     borderRadius: Theme.borderRadius.pill,
     overflow: 'hidden',
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    backgroundColor: Theme.colors.glass,
     borderWidth: 1,
     borderColor: Theme.colors.border,
-    padding: 4,
+  },
+  tabContainer: {
+    backgroundColor: Theme.colors.glass,
+  },
+  tabScroll: {
+    flexDirection: 'row',
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+    gap: 2,
   },
   tabButton: {
-    flex: 1,
     flexDirection: 'row',
-    paddingVertical: Theme.spacing.sm,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 5,
     borderRadius: Theme.borderRadius.pill,
   },
   tabButtonActive: {
     backgroundColor: 'rgba(255,255,255,0.1)',
   },
-  tabText: {
-    color: Theme.colors.textMuted,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  tabTextActive: {
-    color: '#FFF',
-    fontWeight: 'bold',
-  },
-  scrollContainer: {
-    flex: 1,
-  },
+  tabText: { color: Theme.colors.textMuted, fontSize: 12, fontWeight: '600' },
+  tabTextActive: { color: '#FFF', fontWeight: 'bold' },
+
+  scrollContainer: { flex: 1 },
   contentContainer: {
     paddingHorizontal: Theme.spacing.md,
-    paddingBottom: Theme.spacing.xxl * 2, // Space for global floating nav
+    paddingBottom: Theme.spacing.xxl * 2,
   },
-  loaderContainer: {
-    marginTop: 100,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loaderText: {
-    color: Theme.colors.textMuted,
-    marginTop: 16,
-    fontSize: 14,
-    letterSpacing: 1,
-  }
+  loaderContainer: { marginTop: 100, alignItems: 'center', justifyContent: 'center' },
+  loaderText: { color: Theme.colors.textMuted, marginTop: 16, fontSize: 14, letterSpacing: 1 },
 });

@@ -10,7 +10,12 @@ from broker.event_broker import broker
 from company_brain.firestore_inventory import (
     get_suppliers,
     add_supplier,
+    update_supplier,
+    delete_supplier,
+    delete_all_suppliers,
     add_product,
+    update_product,
+    delete_product,
     get_products,
     record_sale,
     record_restock,
@@ -18,7 +23,12 @@ from company_brain.firestore_inventory import (
     get_transactions,
     get_demand_predictions,
     get_reorder_suggestions,
-    get_warehouses
+    get_warehouses,
+    get_orders,
+    add_order,
+    update_order_status,
+    delete_order,
+    get_profit_summary,
 )
 
 router = APIRouter()
@@ -44,6 +54,37 @@ class ProductRequest(BaseModel):
     initial_stock: Optional[float] = None
     stock: Optional[float] = None
     reorder_threshold: Optional[float] = 0.0
+
+class UpdateProductRequest(BaseModel):
+    name: Optional[str] = None
+    category: Optional[str] = None
+    variant: Optional[str] = None
+    unit: Optional[str] = None
+    cost_price: Optional[float] = None
+    selling_price: Optional[float] = None
+    supplier_id: Optional[int] = None
+    reorder_threshold: Optional[float] = None
+    stock: Optional[float] = None
+    warehouse_id: Optional[int] = 1
+
+class UpdateSupplierRequest(BaseModel):
+    name: Optional[str] = None
+    contact: Optional[str] = None
+    rating: Optional[float] = None
+    reliability_score: Optional[float] = None
+    lead_time_days: Optional[int] = None
+
+class OrderRequest(BaseModel):
+    order_ref: Optional[str] = None
+    customer_name: str
+    product_id: int
+    warehouse_id: int = 1
+    quantity: float
+    unit_price: float
+    total_value: Optional[float] = None
+
+class OrderStatusRequest(BaseModel):
+    status: str  # PENDING | FULFILLED | CANCELLED
 
 class TransactionRequest(BaseModel):
     product_id: int
@@ -75,6 +116,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]
     user_id: Optional[str] = None
+
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
@@ -416,3 +458,113 @@ def api_export_csv():
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=opsify_ledger_export.csv"}
     )
+
+
+# ── Product CRUD Extensions ──────────────────────────────────────────────────
+
+@router.put("/api/products/{product_id}")
+def api_update_product(product_id: int, req: UpdateProductRequest):
+    res = update_product(
+        product_id=product_id,
+        name=req.name,
+        category=req.category,
+        variant=req.variant,
+        unit=req.unit,
+        cost_price=req.cost_price,
+        selling_price=req.selling_price,
+        supplier_id=req.supplier_id,
+        reorder_threshold=req.reorder_threshold,
+        stock=req.stock,
+        warehouse_id=req.warehouse_id,
+    )
+    if res["status"] == "error":
+        raise HTTPException(status_code=400, detail=res["message"])
+    return res
+
+
+@router.delete("/api/products/{product_id}")
+def api_delete_product(product_id: int):
+    res = delete_product(product_id)
+    if res["status"] == "error":
+        raise HTTPException(status_code=404, detail=res["message"])
+    return res
+
+
+# ── Supplier CRUD Extensions ─────────────────────────────────────────────────
+
+@router.put("/api/suppliers/{supplier_id}")
+def api_update_supplier(supplier_id: int, req: UpdateSupplierRequest):
+    res = update_supplier(
+        supplier_id=supplier_id,
+        name=req.name,
+        contact=req.contact,
+        rating=req.rating,
+        reliability_score=req.reliability_score,
+        lead_time_days=req.lead_time_days,
+    )
+    if res["status"] == "error":
+        raise HTTPException(status_code=400, detail=res["message"])
+    return res
+
+
+@router.delete("/api/suppliers/all")
+def api_delete_all_suppliers():
+    res = delete_all_suppliers()
+    return res
+
+
+@router.delete("/api/suppliers/{supplier_id}")
+def api_delete_supplier(supplier_id: int):
+    res = delete_supplier(supplier_id)
+    if res["status"] == "error":
+        raise HTTPException(status_code=404, detail=res["message"])
+    return res
+
+
+# ── Orders CRUD ──────────────────────────────────────────────────────────────
+
+@router.get("/api/orders")
+def api_get_orders():
+    return get_orders()
+
+
+@router.post("/api/orders/add")
+def api_add_order(req: OrderRequest):
+    import uuid
+    order_ref = req.order_ref or f"ORD-{uuid.uuid4().hex[:6].upper()}"
+    total = req.total_value if req.total_value is not None else req.quantity * req.unit_price
+    res = add_order(
+        order_ref=order_ref,
+        customer_name=req.customer_name,
+        product_id=req.product_id,
+        warehouse_id=req.warehouse_id,
+        quantity=req.quantity,
+        unit_price=req.unit_price,
+        total_value=total,
+    )
+    if res["status"] == "error":
+        raise HTTPException(status_code=400, detail=res["message"])
+    return res
+
+
+@router.put("/api/orders/{order_id}/status")
+def api_update_order_status(order_id: int, req: OrderStatusRequest):
+    res = update_order_status(order_id, req.status)
+    if res["status"] == "error":
+        raise HTTPException(status_code=400, detail=res["message"])
+    return res
+
+
+@router.delete("/api/orders/{order_id}")
+def api_delete_order(order_id: int):
+    res = delete_order(order_id)
+    if res["status"] == "error":
+        raise HTTPException(status_code=404, detail=res["message"])
+    return res
+
+
+# ── Analytics ─────────────────────────────────────────────────────────────────
+
+@router.get("/api/analytics/profit")
+def api_get_profit_summary():
+    return get_profit_summary()

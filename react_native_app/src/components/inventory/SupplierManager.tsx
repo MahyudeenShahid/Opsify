@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ScrollView, Animated, Dimensions, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Trash2, Trash } from 'lucide-react-native';
 import { Theme } from '../../core/theme';
 import { ApiService } from '../../services/api';
 
@@ -213,8 +214,40 @@ export const SupplierManager: React.FC = () => {
           // ================= DIRECTORY TAB =================
           <View style={styles.tabContent}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Supplier Network</Text>
-              <Text style={styles.sectionSubtitle}>Active Wholesalers tied to dynamic inventory bidding.</Text>
+              <View>
+                <Text style={styles.sectionTitle}>Supplier Network</Text>
+                <Text style={styles.sectionSubtitle}>Active Wholesalers tied to dynamic inventory bidding.</Text>
+              </View>
+              {suppliers.length > 0 && (
+                <TouchableOpacity
+                  style={styles.deleteAllBtn}
+                  onPress={() => {
+                    Alert.alert(
+                      'Delete All Suppliers',
+                      `This will permanently delete all ${suppliers.length} suppliers. Continue?`,
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Delete All',
+                          style: 'destructive',
+                          onPress: async () => {
+                            try {
+                              await ApiService.deleteAllSuppliers();
+                              fetchSuppliers();
+                              Alert.alert('Done', 'All suppliers removed.');
+                            } catch (e: any) {
+                              Alert.alert('Error', e.message);
+                            }
+                          },
+                        },
+                      ]
+                    );
+                  }}
+                >
+                  <Trash size={14} color={Theme.colors.error} />
+                  <Text style={styles.deleteAllText}>Delete All</Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             {suppliers.map((sup) => (
@@ -223,8 +256,36 @@ export const SupplierManager: React.FC = () => {
                 
                 <View style={styles.cardHeader}>
                   <Text style={styles.supplierName}>{sup.name}</Text>
-                  <View style={styles.ratingBadge}>
-                    <Text style={styles.ratingText}>⭐ {sup.rating.toFixed(1)}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <View style={styles.ratingBadge}>
+                      <Text style={styles.ratingText}>⭐ {sup.rating.toFixed(1)}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.deleteSupplierBtn}
+                      onPress={() => {
+                        Alert.alert(
+                          'Delete Supplier',
+                          `Remove "${sup.name}" from the network?`,
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            {
+                              text: 'Delete',
+                              style: 'destructive',
+                              onPress: async () => {
+                                try {
+                                  await ApiService.deleteSupplier(sup.id);
+                                  fetchSuppliers();
+                                } catch (e: any) {
+                                  Alert.alert('Error', e.message);
+                                }
+                              },
+                            },
+                          ]
+                        );
+                      }}
+                    >
+                      <Trash2 size={14} color={Theme.colors.error} />
+                    </TouchableOpacity>
                   </View>
                 </View>
                 
@@ -409,9 +470,12 @@ const styles = StyleSheet.create({
   tabButtonText: { color: Theme.colors.textMuted, fontWeight: '700', fontSize: 13, textTransform: 'uppercase', letterSpacing: 0.5 },
   activeTabText: { color: '#000', fontWeight: '900' },
   tabContent: { marginTop: Theme.spacing.xs },
-  sectionHeader: { marginBottom: Theme.spacing.md, paddingHorizontal: Theme.spacing.xs },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: Theme.spacing.md, paddingHorizontal: Theme.spacing.xs },
   sectionTitle: { color: Theme.colors.text, fontSize: 22, fontWeight: '900', letterSpacing: -0.5 },
   sectionSubtitle: { color: Theme.colors.textMuted, fontSize: 13, marginTop: 4 },
+  deleteAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: Theme.borderRadius.sm, backgroundColor: 'rgba(255,42,85,0.1)', borderWidth: 1, borderColor: 'rgba(255,42,85,0.4)' },
+  deleteAllText: { color: Theme.colors.error, fontSize: 11, fontWeight: '800' },
+  deleteSupplierBtn: { width: 30, height: 30, borderRadius: 8, backgroundColor: 'rgba(255,42,85,0.08)', borderWidth: 1, borderColor: 'rgba(255,42,85,0.3)', alignItems: 'center', justifyContent: 'center' },
   
   // Luxury Directory CSS
   luxuryCard: { position: 'relative', borderRadius: Theme.borderRadius.lg, borderWidth: 1.5, borderColor: Theme.colors.border, padding: Theme.spacing.md, marginBottom: Theme.spacing.md, overflow: 'hidden', ...Theme.shadows.glass },

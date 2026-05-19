@@ -136,6 +136,36 @@ export const ApiService = {
     return response.json();
   },
 
+  async deepScanChats(chatsWithMessages: any[]): Promise<any> {
+    const response = await fetch(`${BASE_URL}/agents/deep-scan`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(chatsWithMessages),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.detail || 'Deep scan failed');
+    }
+    return response.json();
+  },
+
+  async getScanState(): Promise<any> {
+    const response = await fetch(`${BASE_URL}/agents/scan-state`, { headers: authHeaders() });
+    if (!response.ok) throw new Error('Failed to get scan state');
+    return response.json();
+  },
+
+  async rejectOrder(order: { chat_id: string; item: string; quantity: number; type: string }): Promise<any> {
+    const response = await fetch(`${BASE_URL}/agents/reject-order`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(order),
+    });
+    if (!response.ok) throw new Error('Failed to reject order');
+    return response.json();
+  },
+
+
   async searchVendors(query: string, location: string): Promise<any[]> {
     const response = await fetch(
       `${BASE_URL}/vendors/search?query=${encodeURIComponent(query)}&location=${encodeURIComponent(location)}`,
@@ -267,6 +297,122 @@ export const ApiService = {
 
   getExportCsvUrl(): string {
     return `${BASE_URL}/export/csv`;
+  },
+
+  // ─── Product CRUD ─────────────────────────────────────────────────────────
+  async updateProduct(id: number, data: any): Promise<any> {
+    const response = await fetch(`${BASE_URL}/products/${id}`, {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.detail || 'Failed to update product');
+    }
+    return response.json();
+  },
+
+  async deleteProduct(id: number): Promise<any> {
+    const response = await fetch(`${BASE_URL}/products/${id}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.detail || 'Failed to delete product');
+    }
+    return response.json();
+  },
+
+  // ─── Supplier CRUD ────────────────────────────────────────────────────────
+  async updateSupplier(id: number, data: any): Promise<any> {
+    const response = await fetch(`${BASE_URL}/suppliers/${id}`, {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.detail || 'Failed to update supplier');
+    }
+    return response.json();
+  },
+
+  async deleteSupplier(id: number): Promise<any> {
+    const response = await fetch(`${BASE_URL}/suppliers/${id}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.detail || 'Failed to delete supplier');
+    }
+    return response.json();
+  },
+
+  async deleteAllSuppliers(): Promise<any> {
+    const response = await fetch(`${BASE_URL}/suppliers/all`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.detail || 'Failed to delete all suppliers');
+    }
+    return response.json();
+  },
+
+  // ─── Orders CRUD ──────────────────────────────────────────────────────────
+  async getOrders(): Promise<any[]> {
+    const response = await fetch(`${BASE_URL}/orders`, { headers: authHeaders() });
+    if (!response.ok) throw new Error('Failed to fetch orders');
+    return response.json();
+  },
+
+  async addOrder(data: any): Promise<any> {
+    const response = await fetch(`${BASE_URL}/orders/add`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.detail || 'Failed to create order');
+    }
+    return response.json();
+  },
+
+  async updateOrderStatus(id: number, status: string): Promise<any> {
+    const response = await fetch(`${BASE_URL}/orders/${id}/status`, {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify({ status }),
+    });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.detail || 'Failed to update order status');
+    }
+    return response.json();
+  },
+
+  async deleteOrder(id: number): Promise<any> {
+    const response = await fetch(`${BASE_URL}/orders/${id}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.detail || 'Failed to delete order');
+    }
+    return response.json();
+  },
+
+  // ─── Analytics ────────────────────────────────────────────────────────────
+  async getProfitSummary(): Promise<any> {
+    const response = await fetch(`${BASE_URL}/analytics/profit`, { headers: authHeaders() });
+    if (!response.ok) throw new Error('Failed to fetch profit summary');
+    return response.json();
   },
 };
 

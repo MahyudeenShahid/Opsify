@@ -7,7 +7,15 @@ from fastapi import APIRouter, HTTPException
 
 from orchestrator.graph import AntigravityGraph
 from tools.database import get_all_providers, query_mock_provider_db as _search_providers
-from agents.chat_scan_agent import scan_chats_for_incomplete_orders
+from agents.chat_scan_agent import (
+    scan_chats_for_incomplete_orders,
+    deep_scan_chats,
+    load_scan_cursors,
+    load_scan_sessions,
+    save_scan_cursors,
+    save_scan_session,
+    save_rejected_order,
+)
 
 router = APIRouter()
 customer_graph = AntigravityGraph()
@@ -54,6 +62,24 @@ class ChatPayloadItem(BaseModel):
 class EventPayload(BaseModel):
     event_type: str
     payload: dict
+
+class DeepScanMessage(BaseModel):
+    id: str
+    text: str
+    senderId: str = ""
+    senderName: str = ""
+    timestamp_iso: str = ""
+
+class DeepScanChatItem(BaseModel):
+    id: str
+    users: List[Any] = []
+    messages: List[DeepScanMessage] = []
+
+class RejectOrderRequest(BaseModel):
+    chat_id: str
+    item: str
+    quantity: float
+    type: str
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
@@ -186,5 +212,71 @@ def api_scan_chats(req: List[ChatPayloadItem]):
         # Convert Pydantic models to plain dicts for the agent
         raw = [item.model_dump() if hasattr(item, 'model_dump') else item.dict() for item in req]
         return scan_chats_for_incomplete_orders(raw)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/agents/deep-scan")
+def api_deep_scan_chats(req: List[DeepScanChatItem]):
+    """
+    System 1 deep scan: reads ALL messages per chat (since last cursor).
+    Persists scan state to Firestore so next run only processes new messages.
+    """
+    import datetime
+    try:
+        raw_chats = []
+        for chat in req:
+            d = chat.model_dump() if hasattr(chat, 'model_dump') else chat.dict()
+            raw_chats.append(d)
+
+        # Load existing cursors from Firestore
+        cursors = load_scan_cursors()
+
+        # Run deep scan
+        result = deep_scan_chats(raw_chats, scan_cursors=cursors)
+
+        # Persist updated cursors
+        if result["cursor_updates"]:
+            save_scan_cursors(result["cursor_updates"])
+
+        # Save scan session record
+        metadata = result["scan_metadata"]
+        session = {
+            "scanned_at": metadata["scanned_at"],
+            "total_chats": metadata["total_chats"],
+            "total_messages_scanned": metadata["total_messages_scanned"],
+            "new_messages_scanned": metadata["new_messages_scanned"],
+            "orders_detected": len(result["detected_orders"]),
+            "per_chat": metadata["per_chat"],
+        }
+        save_scan_session(session)
+
+        return {
+            "status": "ok",
+            "detected_orders": result["detected_orders"],
+            "scan_metadata": metadata,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/agents/scan-state")
+def api_get_scan_state():
+    """Return all scan cursors + recent scan sessions."""
+    try:
+        cursors = load_scan_cursors()
+        sessions = load_scan_sessions(limit=15)
+        return {"cursors": cursors, "sessions": sessions}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/agents/reject-order")
+def api_reject_order(req: RejectOrderRequest):
+    """Mark a detected order as rejected so it won't resurface in future scans."""
+    try:
+        fingerprint = f"{req.chat_id}|{req.type}|{req.item}|{req.quantity}"
+        save_rejected_order(fingerprint)
+        return {"status": "ok", "fingerprint": fingerprint}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
