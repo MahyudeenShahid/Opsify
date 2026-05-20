@@ -455,7 +455,7 @@ def api_search_vendors(query: str, location: str = "Karachi",
                 for i, p in enumerate(res.get("results", [])[:5]):
                     rating = p.get("rating", round(random.uniform(4.0, 4.9), 1))
                     vendors.append({
-                        "id": f"map-{i}", "name": p.get("name"),
+                        "id": f"map-{uuid.uuid4().hex[:8]}", "name": p.get("name"),
                         "address": p.get("formatted_address"), "rating": rating,
                         "distance": f"{round(random.uniform(0.5, 6.0), 1)} km",
                         "price": f"Rs {round(random.uniform(50.0, 500.0), 1)}",
@@ -478,7 +478,7 @@ def api_search_vendors(query: str, location: str = "Karachi",
                 parts = [p.strip() for p in item.get("display_name", f"{query.title()}").split(",")]
                 name = parts[0] if len(parts[0]) >= 10 else f"{parts[0]} ({parts[1]})" if len(parts) > 1 else parts[0]
                 vendors.append({
-                    "id": f"osm-{i}", "name": name,
+                    "id": f"osm-{uuid.uuid4().hex[:8]}", "name": name,
                     "address": item.get("display_name", "")[:120],
                     "rating": round(random.uniform(4.0, 4.9), 1),
                     "distance": f"{round(random.uniform(0.5, 6.0), 1)} km",
@@ -504,7 +504,7 @@ def api_search_vendors(query: str, location: str = "Karachi",
     for i, prefix in enumerate(prefixes[:5]):
         rating = round(random.uniform(4.0, 5.0), 1)
         vendors.append({
-            "id": f"mock-{i}", "name": prefix,
+            "id": f"mock-{uuid.uuid4().hex[:8]}", "name": prefix,
             "address": f"Plot {random.randint(10,250)}, Block {random.randint(1,9)}, {location}",
             "rating": rating,
             "distance": f"{round(random.uniform(0.5, 5.0), 1)} km",
