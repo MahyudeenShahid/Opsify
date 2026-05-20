@@ -7,7 +7,7 @@ import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   BrainCircuit, Boxes, MessageCircle, Navigation, Bot,
-  TrendingUp, Settings, Eye, EyeOff, Bell,
+  TrendingUp, Settings, Eye, EyeOff, Bell, BadgeDollarSign
 } from 'lucide-react-native';
 
 import { Theme } from './src/core/theme';
@@ -32,12 +32,12 @@ import { NotificationService } from './src/services/NotificationService';
 type Tab = 'customer' | 'inventory' | 'omnichat' | 'logistics' | 'opsbot' | 'erpagent';
 
 const TABS: { id: Tab; label: string; Icon: any }[] = [
-  { id: 'customer',  label: 'Brain',    Icon: BrainCircuit },
-  { id: 'inventory', label: 'ERP Hub',  Icon: Boxes },
-  { id: 'omnichat',  label: 'OmniChat', Icon: MessageCircle },
+  { id: 'customer', label: 'Brain', Icon: BrainCircuit },
+  { id: 'inventory', label: 'ERP Hub', Icon: Boxes },
+  { id: 'omnichat', label: 'OmniChat', Icon: MessageCircle },
   { id: 'logistics', label: 'Delivery', Icon: Navigation },
-  { id: 'opsbot',    label: 'OpsBot',   Icon: Bot },
-  { id: 'erpagent',  label: 'Agent',    Icon: TrendingUp },
+  { id: 'opsbot', label: 'OpsBot', Icon: Bot },
+  { id: 'erpagent', label: 'Agent', Icon: TrendingUp },
 ];
 
 // ─── Premium Nav Button ───────────────────────────────────────────────────────
@@ -51,7 +51,7 @@ const NavButton = ({
   label: string;
   badge?: number;
 }) => {
-  const scale    = useRef(new Animated.Value(1)).current;
+  const scale = useRef(new Animated.Value(1)).current;
   const bgOpacity = useRef(new Animated.Value(isActive ? 1 : 0)).current;
   const textScale = useRef(new Animated.Value(isActive ? 1 : 0.85)).current;
 
@@ -130,7 +130,7 @@ const BellButton = ({ unreadCount, onPress }: { unreadCount: number; onPress: ()
       activeOpacity={1}
     >
       <Animated.View style={{ transform: [{ scale }, { rotate: shake.interpolate({ inputRange: [-1, 1], outputRange: ['-8deg', '8deg'] }) }] }}>
-        <Bell size={20} color={unreadCount > 0 ? Theme.colors.primary : Theme.colors.textMuted} />
+        <Bell size={18} color={unreadCount > 0 ? Theme.colors.primary : "#FFF"} />
         {unreadCount > 0 && (
           <View style={styles.bellBadge}>
             <Text style={styles.bellBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
@@ -145,7 +145,7 @@ const BellButton = ({ unreadCount, onPress }: { unreadCount: number; onPress: ()
 
 const LoadingSplash = () => {
   const pulse = useRef(new Animated.Value(0.5)).current;
-  const ring  = useRef(new Animated.Value(0)).current;
+  const ring = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.loop(Animated.sequence([
       Animated.timing(pulse, { toValue: 1, duration: 900, useNativeDriver: true }),
@@ -172,16 +172,16 @@ const LoadingSplash = () => {
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [activeTab, setActiveTab]             = useState<Tab>('inventory');
-  const [user, setUser]                       = useState<any>(null);
-  const [loading, setLoading]                 = useState(true);
+  const [activeTab, setActiveTab] = useState<Tab>('inventory');
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
-  const [showNotifications, setShowNotifications]     = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
-  const [isChatOpen, setIsChatOpen]           = useState(false);
-  const [unreadCount, setUnreadCount]         = useState(0);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
-  const fadeAnim  = useRef(new Animated.Value(1)).current;
+  const fadeAnim = useRef(new Animated.Value(1)).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
   // Poll for unread notification count every 60s
@@ -189,7 +189,7 @@ export default function App() {
     try {
       const notifs = await ApiService.getNotifications(50);
       setUnreadCount(notifs.filter((n: any) => !n.read).length);
-    } catch {}
+    } catch { }
   }, []);
 
   useEffect(() => {
@@ -234,19 +234,19 @@ export default function App() {
   const switchTab = (tab: Tab) => {
     if (tab === activeTab) return;
     Animated.parallel([
-      Animated.timing(fadeAnim,  { toValue: 0, duration: 120, useNativeDriver: true }),
+      Animated.timing(fadeAnim, { toValue: 0, duration: 120, useNativeDriver: true }),
       Animated.timing(scaleAnim, { toValue: 0.97, duration: 120, easing: Easing.out(Easing.ease), useNativeDriver: true }),
     ]).start(() => {
       setActiveTab(tab);
       Animated.parallel([
-        Animated.timing(fadeAnim,  { toValue: 1, duration: 220, useNativeDriver: true }),
+        Animated.timing(fadeAnim, { toValue: 1, duration: 220, useNativeDriver: true }),
         Animated.spring(scaleAnim, { toValue: 1, ...Theme.animation.spring, useNativeDriver: true }),
       ]).start();
     });
   };
 
   if (loading) return <LoadingSplash />;
-  if (!user)   return <AuthScreen />;
+  if (!user) return <AuthScreen />;
 
   if (needsOnboarding) {
     return (
@@ -279,23 +279,31 @@ export default function App() {
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor={Theme.colors.background} />
 
-      {/* Top-right Controls */}
+      {/* Top Controls Bar */}
       <View style={styles.topControls}>
-        <BellButton unreadCount={unreadCount} onPress={() => setShowNotifications(true)} />
-        <TouchableOpacity
-          style={styles.settingsBtn}
-          onPress={() => setShowAccountSettings(true)}
-          activeOpacity={0.7}
-        >
-          <Settings size={18} color={Theme.colors.textMuted} />
-        </TouchableOpacity>
+        <View style={styles.brandContainer}>
+          <BadgeDollarSign size={20} color={Theme.colors.primary} />
+          <Text style={styles.brandText}>Opsify</Text>
+        </View>
+
+        <BlurView intensity={40} tint="dark" style={styles.topControlsGlass}>
+          <BellButton unreadCount={unreadCount} onPress={() => setShowNotifications(true)} />
+          <View style={styles.topControlsDivider} />
+          <TouchableOpacity
+            style={styles.settingsBtn}
+            onPress={() => setShowAccountSettings(true)}
+            activeOpacity={0.7}
+          >
+            <Settings size={18} color="#FFF" />
+          </TouchableOpacity>
+        </BlurView>
       </View>
 
       {/* Main Content */}
       <AppDataProvider>
         <Animated.View style={[styles.container, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
           <ErrorBoundary fallbackTitle="Customer Brain Error">
-            {activeTab === 'customer'  && <CustomerBrainScreen />}
+            {activeTab === 'customer' && <CustomerBrainScreen />}
           </ErrorBoundary>
           <ErrorBoundary fallbackTitle="ERP Hub Error">
             {activeTab === 'inventory' && <InventoryDashboardScreen />}
@@ -399,38 +407,69 @@ const styles = StyleSheet.create({
   },
 
   topControls: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 54 : 12,
-    right: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 16 : 12,
+    paddingBottom: 8,
     zIndex: 100,
+  },
+  brandContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+  },
+  brandText: {
+    color: '#FFF',
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+  },
+  topControlsGlass: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 24,
+    backgroundColor: 'rgba(30, 41, 59, 0.4)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    overflow: 'hidden',
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  topControlsDivider: {
+    width: 1,
+    height: 18,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    marginHorizontal: 2,
   },
   bellBtn: {
-    width: 38, height: 38,
-    borderRadius: 19,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: Theme.colors.border,
+    width: 40, height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
   bellBadge: {
-    position: 'absolute', top: -4, right: -4,
-    minWidth: 16, height: 16, borderRadius: 8,
+    position: 'absolute', top: -6, right: -10,
+    minWidth: 18, height: 18, borderRadius: 9,
     backgroundColor: Theme.colors.error,
     alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 3,
-    borderWidth: 1.5, borderColor: Theme.colors.background,
+    paddingHorizontal: 4,
+    shadowColor: Theme.colors.error,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 6,
+    elevation: 4,
   },
-  bellBadgeText: { color: '#FFF', fontSize: 9, fontWeight: '900' },
+  bellBadgeText: { color: '#FFF', fontSize: 10, fontWeight: '900' },
   settingsBtn: {
-    width: 38, height: 38,
-    borderRadius: 19,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: Theme.colors.border,
+    width: 40, height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },

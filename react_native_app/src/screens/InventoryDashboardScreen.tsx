@@ -138,24 +138,26 @@ export const InventoryDashboardScreen: React.FC = () => {
           <Text style={styles.title}>ERP Hub</Text>
           <Text style={styles.subtitle}>BUSINESS OPERATIONS CENTER</Text>
         </View>
-        <View style={styles.headerButtons}>
-          {pendingOrders > 0 && (
-            <TouchableOpacity style={[styles.badge, { borderColor: Theme.colors.secondary }]} onPress={() => setActiveTab('orders')}>
-              <Text style={[styles.badgeText, { color: Theme.colors.secondary }]}>📋 {pendingOrders}</Text>
-            </TouchableOpacity>
-          )}
-          {lowStockCount > 0 && (
-            <TouchableOpacity style={[styles.badge, { borderColor: Theme.colors.error }]} onPress={() => setActiveTab('stock')}>
-              <Text style={[styles.badgeText, { color: Theme.colors.error }]}>⚠️ {lowStockCount}</Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity style={styles.actionBtn} onPress={handleDownloadCSV} disabled={isDownloadingCSV}>
-            {isDownloadingCSV ? <ActivityIndicator size="small" color={Theme.colors.primary} /> : <Download color={Theme.colors.primary} size={18} />}
+      </View>
+
+      <View style={styles.headerButtonsRow}>
+        {pendingOrders > 0 && (
+          <TouchableOpacity style={[styles.badge, { borderColor: Theme.colors.secondary }]} onPress={() => setActiveTab('orders')}>
+            <Text style={[styles.badgeText, { color: Theme.colors.secondary }]}>📋 {pendingOrders} Pending</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionBtn} onPress={fetchData}>
-            <RefreshCw color={Theme.colors.textMuted} size={18} />
+        )}
+        {lowStockCount > 0 && (
+          <TouchableOpacity style={[styles.badge, { borderColor: Theme.colors.error }]} onPress={() => setActiveTab('stock')}>
+            <Text style={[styles.badgeText, { color: Theme.colors.error }]}>⚠️ {lowStockCount} Alerts</Text>
           </TouchableOpacity>
-        </View>
+        )}
+        <View style={{ flex: 1 }} />
+        <TouchableOpacity style={styles.actionBtn} onPress={handleDownloadCSV} disabled={isDownloadingCSV}>
+          {isDownloadingCSV ? <ActivityIndicator size="small" color={Theme.colors.primary} /> : <Download color={Theme.colors.primary} size={16} />}
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.actionBtn} onPress={fetchData}>
+          <RefreshCw color={Theme.colors.textMuted} size={16} />
+        </TouchableOpacity>
       </View>
 
       {/* Tab Bar */}
@@ -223,14 +225,15 @@ export const InventoryDashboardScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: 'transparent' },
   header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: Theme.spacing.md, paddingTop: Theme.spacing.lg, paddingBottom: Theme.spacing.sm,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
+    paddingHorizontal: Theme.spacing.md, paddingTop: Theme.spacing.lg, paddingBottom: Theme.spacing.xs,
   },
-  title: { color: '#FFF', fontSize: 30, fontWeight: '900', letterSpacing: 1 },
+  title: { color: '#FFF', fontSize: 30, fontWeight: '900', letterSpacing: 1, marginTop: 10 },
   subtitle: { color: Theme.colors.primary, fontSize: 10, textTransform: 'uppercase', letterSpacing: 2, marginTop: 2 },
-  headerButtons: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  actionBtn: { width: 40, height: 40, borderRadius: Theme.borderRadius.pill, backgroundColor: Theme.colors.surface, borderWidth: 1, borderColor: Theme.colors.border, alignItems: 'center', justifyContent: 'center' },
-  badge: { paddingHorizontal: 10, height: 30, borderRadius: Theme.borderRadius.pill, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  
+  headerButtonsRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: Theme.spacing.md, marginBottom: Theme.spacing.md },
+  actionBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: Theme.colors.surface, borderWidth: 1, borderColor: Theme.colors.border, alignItems: 'center', justifyContent: 'center' },
+  badge: { paddingHorizontal: 12, height: 32, borderRadius: Theme.borderRadius.pill, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   badgeText: { fontSize: 11, fontWeight: '800' },
 
   tabWrapper: { marginHorizontal: Theme.spacing.md, marginBottom: Theme.spacing.md, borderRadius: Theme.borderRadius.pill, overflow: 'hidden', borderWidth: 1, borderColor: Theme.colors.border },

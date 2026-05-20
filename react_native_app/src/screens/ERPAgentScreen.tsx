@@ -260,19 +260,23 @@ export const ERPAgentScreen: React.FC = () => {
       {/* Animated Header */}
       <Animated.View style={[styles.header, { opacity: headerAnim, transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }] }]}>
         <View style={styles.headerLeft}>
-          <View style={styles.agentBadge}>
-            <Animated.View style={[styles.agentDot, { transform: [{ scale: pulseAnim }] }]} />
-            <Text style={styles.agentBadgeText}>SYSTEM 2 · LIVE</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%' }}>
+            <View>
+              <View style={styles.agentBadge}>
+                <Animated.View style={[styles.agentDot, { transform: [{ scale: pulseAnim }] }]} />
+                <Text style={styles.agentBadgeText}>SYSTEM 2 · LIVE</Text>
+              </View>
+              <Text style={[styles.headerTitle, { marginTop: 8 }]}>ERP Intelligence Agent</Text>
+            </View>
+            <TouchableOpacity style={styles.refreshBtn} onPress={runScan} disabled={isScanning}>
+              {isScanning
+                ? <ActivityIndicator size="small" color={Theme.colors.primary} />
+                : <RefreshCw size={16} color={Theme.colors.primary} />
+              }
+            </TouchableOpacity>
           </View>
-          <Text style={styles.headerTitle}>ERP Intelligence Agent</Text>
           <Text style={styles.headerSub}>Automated procurement & supplier intelligence</Text>
         </View>
-        <TouchableOpacity style={styles.refreshBtn} onPress={runScan} disabled={isScanning}>
-          {isScanning
-            ? <ActivityIndicator size="small" color={Theme.colors.primary} />
-            : <RefreshCw size={18} color={Theme.colors.primary} />
-          }
-        </TouchableOpacity>
       </Animated.View>
 
       {/* Section Toggle Pills */}
@@ -407,7 +411,8 @@ export const ERPAgentScreen: React.FC = () => {
                         <View style={styles.vendorResults}>
                           <Text style={styles.vendorResultsTitle}>Top {results.length} Nearby Suppliers</Text>
                           {results.map((vendor, idx) => {
-                            const isAdded = addedVendors.has(vendor.id) || suppliers.some(s => s.name === vendor.name);
+                            const vNorm = vendor.name.trim().toLowerCase();
+                            const isAdded = addedVendors.has(vendor.id) || suppliers.some(s => s.name.trim().toLowerCase() === vNorm);
                             return (
                               <View key={vendor.id} style={styles.vendorCard}>
                                 <LinearGradient colors={['rgba(26,34,52,0.95)', 'rgba(17,22,34,0.95)']} style={StyleSheet.absoluteFill} />
