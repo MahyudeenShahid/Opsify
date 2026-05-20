@@ -4,8 +4,10 @@
     "esModuleInterop": true,
     "jsx": "react-native",
     "lib": [
-      "esnext"
+      "esnext",
+      "DOM"
     ],
+    "module": "ESNext",
     "moduleResolution": "bundler",
     "noEmit": true,
     "strict": true,
