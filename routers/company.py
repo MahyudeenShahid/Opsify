@@ -9,7 +9,7 @@ import random
 import uuid
 from typing import Optional, List, Union, Any
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException, Header, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Header, BackgroundTasks, Query
 
 from broker.event_broker import broker
 from company_brain.firestore_inventory import (

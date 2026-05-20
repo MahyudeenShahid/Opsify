@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View, ScrollView, ActivityIndicator, Alert, Animated, Linking } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View, ScrollView, ActivityIndicator, Alert, Animated, Linking, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Download, RefreshCw, LayoutDashboard, Package, FileText, ShoppingCart, Activity, Warehouse } from 'lucide-react-native';
 
@@ -67,9 +67,28 @@ export const InventoryDashboardScreen: React.FC = () => {
   const handleDownloadCSV = async () => {
     setIsDownloadingCSV(true);
     try {
-      Linking.openURL(ApiService.getExportCsvUrl()).catch(err => Alert.alert('Error', err.message));
+      const url = ApiService.getExportCsvUrl();
+      if (Platform.OS === 'web') {
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', 'opsify_ledger_export.csv');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        const supported = await Linking.canOpenURL(url);
+        if (supported) {
+          await Linking.openURL(url);
+        } else {
+          Alert.alert('Error', 'Cannot open export URL: ' + url);
+        }
+      }
     } catch (e: any) {
-      Alert.alert('Download Failed', e.message);
+      if (Platform.OS === 'web') {
+        (window as any).alert('Download Failed: ' + e.message);
+      } else {
+        Alert.alert('Download Failed', e.message);
+      }
     } finally {
       setIsDownloadingCSV(false);
     }
