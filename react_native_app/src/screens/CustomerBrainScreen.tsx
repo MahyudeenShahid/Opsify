@@ -715,12 +715,7 @@ export const CustomerBrainScreen: React.FC = () => {
         const reader = new FileReader();
         reader.onloadend = async () => {
           const b64 = (reader.result as string).split(',')[1];
-          const res = await fetch('http://localhost:8000/api/voice/transcribe', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ audio_base64: b64, mime_type: 'audio/wav' }),
-          });
-          const d = await res.json();
+          const d = await ApiService.transcribeVoice(b64, 'audio/wav');
           if (d.transcript) setMessage(d.transcript);
         };
         reader.readAsDataURL(blob);

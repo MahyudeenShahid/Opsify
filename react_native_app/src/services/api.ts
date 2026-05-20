@@ -2,6 +2,9 @@ import { Platform } from 'react-native';
 import { auth } from '../config/firebaseConfig';
 
 const getBaseUrl = () => {
+  if (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_API_URL) {
+    return process.env.EXPO_PUBLIC_API_URL;
+  }
   if (Platform.OS === 'web') return 'http://localhost:8000/api';
   if (Platform.OS === 'android') return 'http://10.0.2.2:8000/api';
   return 'http://localhost:8000/api';
@@ -35,6 +38,16 @@ export const ApiService = {
       body: JSON.stringify({ message }),
     });
     if (!response.ok) throw new Error('Failed to send order');
+    return response.json();
+  },
+
+  async transcribeVoice(audioBase64: string, mimeType: string = 'audio/wav'): Promise<any> {
+    const response = await fetch(`${BASE_URL}/voice/transcribe`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ audio_base64: audioBase64, mime_type: mimeType }),
+    });
+    if (!response.ok) throw new Error('Voice transcription failed');
     return response.json();
   },
 
