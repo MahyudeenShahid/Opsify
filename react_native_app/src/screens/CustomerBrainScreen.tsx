@@ -594,6 +594,7 @@ export const CustomerBrainScreen: React.FC = () => {
     try {
       // Dynamically match the item name against actual database products
       let productId: string | number = 1;
+      let warehouseId: number = order.warehouse_id || 1;
       try {
         const dbProducts = await ApiService.getProducts();
         const normalizedOrderItem = order.item.toLowerCase().trim();
@@ -604,6 +605,7 @@ export const CustomerBrainScreen: React.FC = () => {
         );
         if (matchedProduct) {
           productId = matchedProduct.id;
+          if (matchedProduct.warehouse_id) warehouseId = matchedProduct.warehouse_id;
         } else {
           const partialMatch = dbProducts.find(
             (p: any) =>
@@ -612,6 +614,7 @@ export const CustomerBrainScreen: React.FC = () => {
           );
           if (partialMatch) {
             productId = partialMatch.id;
+            if (partialMatch.warehouse_id) warehouseId = partialMatch.warehouse_id;
           } else if (dbProducts.length > 0) {
             productId = dbProducts[0].id;
           }
@@ -624,9 +627,20 @@ export const CustomerBrainScreen: React.FC = () => {
 
       await ApiService.recordTransaction(txType, {
         product_id: productId,
-        warehouse_id: order.warehouse_id || 1,
+        warehouse_id: warehouseId,
         quantity: order.quantity || 1,
         value: order.value || 0,
+      });
+
+      // ── KEY FIX: Also create a real Order record so it appears in ERP Hub Orders tab ──
+      await ApiService.addOrder({
+        customer_name: order.contact_name || 'Brain Auto-Approved',
+        product_id: productId,
+        warehouse_id: warehouseId,
+        quantity: order.quantity || 1,
+        unit_price: order.value ? order.value / (order.quantity || 1) : 0,
+        total_value: order.value || 0,
+        order_ref: `BRAIN-${order.type}-${Date.now()}`,
       });
 
       // Remove from both local state lists
@@ -639,7 +653,7 @@ export const CustomerBrainScreen: React.FC = () => {
       if (fp) await ApiService.deletePendingOrder(fp);
 
       setTraceLogs(prev => [...prev, `[System1] ✅ Booked: ${order.quantity} × ${order.item} (${order.type}) from ${order.contact_name}`]);
-      Alert.alert('✅ Order Booked', `${order.quantity} units of ${order.item} logged to the ERP ledger.`);
+      Alert.alert('✅ Order Booked', `${order.quantity} units of ${order.item} logged to the ERP ledger and visible in Orders tab.`);
     } catch (e: any) {
       Alert.alert('Booking Error', e.message);
     }

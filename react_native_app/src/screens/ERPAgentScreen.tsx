@@ -12,6 +12,7 @@ import {
 } from 'lucide-react-native';
 import { Theme } from '../core/theme';
 import { ApiService } from '../services/api';
+import { useAppData } from '../core/AppDataContext';
 
 const URGENCY_CONFIG: Record<string, { color: string; bg: string; label: string; emoji: string }> = {
   CRITICAL: { color: '#FF2A55', bg: 'rgba(255,42,85,0.1)', label: 'CRITICAL', emoji: '🚨' },
@@ -21,11 +22,6 @@ const URGENCY_CONFIG: Record<string, { color: string; bg: string; label: string;
 
 export const ERPAgentScreen: React.FC = () => {
   const [isScanning, setIsScanning] = useState(false);
-  const [suggestions, setSuggestions] = useState<any[]>([]);
-  const [profitData, setProfitData] = useState<any>(null);
-  const [suppliers, setSuppliers] = useState<any[]>([]);
-  const [warehouses, setWarehouses] = useState<any[]>([]);
-  const [products, setProducts] = useState<any[]>([]);
   const [expandedItem, setExpandedItem] = useState<number | null>(null);
   const [searchingFor, setSearchingFor] = useState<number | null>(null);
   const [searchResults, setSearchResults] = useState<Record<number, any[]>>({});
@@ -41,12 +37,20 @@ export const ERPAgentScreen: React.FC = () => {
   const [editingSupplierId, setEditingSupplierId] = useState<string | null>(null);
   const [isSubmittingSupplier, setIsSubmittingSupplier] = useState(false);
 
+  // Use global shared data — eliminates duplicate requests
+  const {
+    suggestions, profitSummary: profitData, suppliers, warehouses, products,
+    isLoading: isContextLoading,
+    refresh: refreshAll, refreshSuppliers, setSuppliers,
+  } = useAppData();
+
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const headerAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.timing(headerAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
-    runScan();
+    // Trigger a refresh if no data yet; context handles debounce
+    refreshAll();
     // Pulse animation for scanning indicator
     const pulse = Animated.loop(
       Animated.sequence([
@@ -61,18 +65,7 @@ export const ERPAgentScreen: React.FC = () => {
   const runScan = async () => {
     setIsScanning(true);
     try {
-      const [suggs, profit, sups, whs, prods] = await Promise.all([
-        ApiService.getReorderSuggestions(),
-        ApiService.getProfitSummary().catch(() => null),
-        ApiService.getSuppliers(),
-        ApiService.getWarehouses(),
-        ApiService.getProducts(),
-      ]);
-      setSuggestions(suggs);
-      setProfitData(profit);
-      setSuppliers(sups);
-      setWarehouses(whs);
-      setProducts(prods);
+      await refreshAll(true); // force full refresh from backend
     } catch (e: any) {
       Alert.alert('Scan Error', e.message);
     } finally {
@@ -106,9 +99,7 @@ export const ERPAgentScreen: React.FC = () => {
         lead_time_days: parseFloat(vendor.distance) > 3 ? 4 : 2,
       });
       setAddedVendors(prev => new Set([...prev, vendor.id]));
-      // Refresh suppliers
-      const sups = await ApiService.getSuppliers();
-      setSuppliers(sups);
+      await refreshSuppliers();
       Alert.alert('✅ Supplier Added', `${vendor.name} has been added to your supplier network.`);
     } catch (e: any) {
       Alert.alert('Error', e.message);
@@ -214,8 +205,7 @@ export const ERPAgentScreen: React.FC = () => {
       setEditingSupplierId(null);
       setShowSupplierForm(false);
       
-      const sups = await ApiService.getSuppliers();
-      setSuppliers(sups);
+      await refreshSuppliers();
     } catch (e: any) {
       if (Platform.OS === 'web') (window as any).alert('Error: ' + e.message);
       else Alert.alert('Error', e.message);

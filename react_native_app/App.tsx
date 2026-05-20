@@ -7,6 +7,7 @@ import { BlurView } from 'expo-blur';
 import { BrainCircuit, Boxes, MessageCircle, Navigation, Bot, TrendingUp, Settings, Eye, EyeOff } from 'lucide-react-native';
 
 import { Theme } from './src/core/theme';
+import { AppDataProvider } from './src/core/AppDataContext';
 import { CustomerBrainScreen } from './src/screens/CustomerBrainScreen';
 import { InventoryDashboardScreen } from './src/screens/InventoryDashboardScreen';
 import { OmniChatScreen } from './src/screens/OmniChat/OmniChatScreen';
@@ -164,31 +165,33 @@ export default function App() {
       </TouchableOpacity>
 
       {/* Main Content */}
-      <Animated.View style={[styles.container, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
-        <ErrorBoundary fallbackTitle="Customer Brain Error">
-          {activeTab === 'customer' && <CustomerBrainScreen />}
-        </ErrorBoundary>
-        <ErrorBoundary fallbackTitle="ERP Hub Error">
-          {activeTab === 'inventory' && <InventoryDashboardScreen />}
-        </ErrorBoundary>
-        <ErrorBoundary fallbackTitle="OmniChat Error">
-          {activeTab === 'omnichat' && (
-            <OmniChatScreen
-              currentUserId={user.uid}
-              setIsFloatingBotHidden={setIsFloatingBotHidden}
-            />
-          )}
-        </ErrorBoundary>
-        <ErrorBoundary fallbackTitle="Delivery Error">
-          {activeTab === 'logistics' && <DeliveryIntelligenceScreen />}
-        </ErrorBoundary>
-        <ErrorBoundary fallbackTitle="OpsBot Error">
-          {activeTab === 'opsbot' && <ChatScreen currentUserId={user.uid} />}
-        </ErrorBoundary>
-        <ErrorBoundary fallbackTitle="ERP Agent Error">
-          {activeTab === 'erpagent' && <ERPAgentScreen />}
-        </ErrorBoundary>
-      </Animated.View>
+      <AppDataProvider>
+        <Animated.View style={[styles.container, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
+          <ErrorBoundary fallbackTitle="Customer Brain Error">
+            {activeTab === 'customer' && <CustomerBrainScreen />}
+          </ErrorBoundary>
+          <ErrorBoundary fallbackTitle="ERP Hub Error">
+            {activeTab === 'inventory' && <InventoryDashboardScreen />}
+          </ErrorBoundary>
+          <ErrorBoundary fallbackTitle="OmniChat Error">
+            {activeTab === 'omnichat' && (
+              <OmniChatScreen
+                currentUserId={user.uid}
+                setIsFloatingBotHidden={setIsFloatingBotHidden}
+              />
+            )}
+          </ErrorBoundary>
+          <ErrorBoundary fallbackTitle="Delivery Error">
+            {activeTab === 'logistics' && <DeliveryIntelligenceScreen />}
+          </ErrorBoundary>
+          <ErrorBoundary fallbackTitle="OpsBot Error">
+            {activeTab === 'opsbot' && <ChatScreen currentUserId={user.uid} />}
+          </ErrorBoundary>
+          <ErrorBoundary fallbackTitle="ERP Agent Error">
+            {activeTab === 'erpagent' && <ERPAgentScreen />}
+          </ErrorBoundary>
+        </Animated.View>
+      </AppDataProvider>
 
       {/* Floating Glassmorphic Nav Bar */}
       <View style={styles.floatingNavContainer}>

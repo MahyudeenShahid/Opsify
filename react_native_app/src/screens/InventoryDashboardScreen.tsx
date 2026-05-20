@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View, ScrollView, ActivityIndicator, Alert, Animated, Linking, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Download, RefreshCw, LayoutDashboard, Package, FileText, ShoppingCart, Activity, Warehouse } from 'lucide-react-native';
 
 import { Theme } from '../core/theme';
 import { ApiService } from '../services/api';
+import { useAppData } from '../core/AppDataContext';
 import { OverviewDashboard } from '../components/inventory/OverviewDashboard';
 import { ProductManager } from '../components/inventory/ProductManager';
 import { OrderManager } from '../components/inventory/OrderManager';
@@ -24,45 +25,27 @@ const TABS: { id: SubTab; label: string; icon: any }[] = [
 
 export const InventoryDashboardScreen: React.FC = () => {
   const [activeTab, setActiveTab] = useState<SubTab>('overview');
-  const [isLoading, setIsLoading] = useState(false);
   const [isDownloadingCSV, setIsDownloadingCSV] = useState(false);
 
-  const [inventory, setInventory] = useState<any[]>([]);
-  const [predictions, setPredictions] = useState<any[]>([]);
-  const [suggestions, setSuggestions] = useState<any[]>([]);
-  const [warehouses, setWarehouses] = useState<any[]>([]);
-  const [orders, setOrders] = useState<any[]>([]);
-  const [profitSummary, setProfitSummary] = useState<any>(null);
+  const { inventory, orders, warehouses, suggestions, predictions, profitSummary, isLoading, refresh, refreshOrders } = useAppData();
 
   const contentOpacity = useRef(new Animated.Value(0)).current;
 
-  const fetchData = async () => {
-    setIsLoading(true);
-    Animated.timing(contentOpacity, { toValue: 0, duration: 200, useNativeDriver: true }).start();
-    try {
-      const [inv, preds, suggs, wh, ords, profit] = await Promise.all([
-        ApiService.getProducts(),
-        ApiService.getDemandPredictions(),
-        ApiService.getReorderSuggestions(),
-        ApiService.getWarehouses(),
-        ApiService.getOrders().catch(() => []),
-        ApiService.getProfitSummary().catch(() => null),
-      ]);
-      setInventory(inv);
-      setPredictions(preds);
-      setSuggestions(suggs);
-      setWarehouses(wh);
-      setOrders(ords);
-      setProfitSummary(profit);
-      Animated.timing(contentOpacity, { toValue: 1, duration: 400, useNativeDriver: true }).start();
-    } catch (e: any) {
-      console.error(e);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  useEffect(() => {
+    // Only refresh if not already fresh – context handles debouncing
+    refresh();
+  }, []);
 
-  useEffect(() => { fetchData(); }, []);
+  // Fade in when data arrives
+  useEffect(() => {
+    if (!isLoading) {
+      Animated.timing(contentOpacity, { toValue: 1, duration: 400, useNativeDriver: true }).start();
+    } else {
+      Animated.timing(contentOpacity, { toValue: 0, duration: 200, useNativeDriver: true }).start();
+    }
+  }, [isLoading]);
+
+  const fetchData = () => refresh(true);
 
   const handleDownloadCSV = async () => {
     setIsDownloadingCSV(true);
@@ -179,7 +162,7 @@ export const InventoryDashboardScreen: React.FC = () => {
                   orders={orders}
                   inventory={inventory}
                   warehouses={warehouses}
-                  onRefresh={fetchData}
+                  onRefresh={refreshOrders}
                 />
               )}
               {activeTab === 'warehouses' && (

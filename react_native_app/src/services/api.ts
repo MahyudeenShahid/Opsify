@@ -118,7 +118,7 @@ export const ApiService = {
   },
 
   async addSupplier(data: any): Promise<any> {
-    const response = await fetch(`${BASE_URL}/suppliers/add`, {
+    const response = await fetch(`${BASE_URL}/suppliers`, {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify(data),
