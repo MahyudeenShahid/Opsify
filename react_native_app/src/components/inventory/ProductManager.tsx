@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ActivityIndicator, ScrollView } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ActivityIndicator, ScrollView, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Pencil, Trash2, Plus, Check, X, Package } from 'lucide-react-native';
 import { Theme } from '../../core/theme';
@@ -76,10 +76,22 @@ export const ProductManager: React.FC<Props> = ({ inventory, onRefresh }) => {
     }
   };
 
-  const handleDelete = (item: any) => {
+  const handleDelete = async (item: any) => {
+    const msg = `Delete "${item.name}"? This will also remove all its stock and transaction history.`;
+    
+    if (Platform.OS === 'web') {
+      if (window.confirm(msg)) {
+        try {
+          await ApiService.deleteProduct(item.id);
+          onRefresh();
+        } catch (e: any) { Alert.alert('Error', e.message); }
+      }
+      return;
+    }
+
     Alert.alert(
       'Delete Product',
-      `Delete "${item.name}"? This will also remove all its stock and transaction history.`,
+      msg,
       [
         { text: 'Cancel', style: 'cancel' },
         {

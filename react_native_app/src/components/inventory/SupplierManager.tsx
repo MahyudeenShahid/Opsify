@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ScrollView, Animated, Dimensions, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ScrollView, Animated, Dimensions, ActivityIndicator, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Trash2, Trash } from 'lucide-react-native';
 import { Theme } from '../../core/theme';
@@ -223,9 +223,18 @@ export const SupplierManager: React.FC = () => {
                 <TouchableOpacity
                   style={styles.deleteAllBtn}
                   onPress={() => {
+                    const msg = `This will permanently delete all ${suppliers.length} suppliers. Continue?`;
+                    if (Platform.OS === 'web') {
+                      if (window.confirm(msg)) {
+                        ApiService.deleteAllSuppliers()
+                          .then(() => { fetchSuppliers(); Alert.alert('Done', 'All suppliers removed.'); })
+                          .catch(e => Alert.alert('Error', e.message));
+                      }
+                      return;
+                    }
                     Alert.alert(
                       'Delete All Suppliers',
-                      `This will permanently delete all ${suppliers.length} suppliers. Continue?`,
+                      msg,
                       [
                         { text: 'Cancel', style: 'cancel' },
                         {
@@ -264,9 +273,18 @@ export const SupplierManager: React.FC = () => {
                     <TouchableOpacity
                       style={styles.deleteSupplierBtn}
                       onPress={() => {
+                        const msg = `Remove "${sup.name}" from the network?`;
+                        if (Platform.OS === 'web') {
+                          if (window.confirm(msg)) {
+                            ApiService.deleteSupplier(sup.id)
+                              .then(() => fetchSuppliers())
+                              .catch(e => Alert.alert('Error', e.message));
+                          }
+                          return;
+                        }
                         Alert.alert(
                           'Delete Supplier',
-                          `Remove "${sup.name}" from the network?`,
+                          msg,
                           [
                             { text: 'Cancel', style: 'cancel' },
                             {

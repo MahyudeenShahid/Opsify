@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   StyleSheet, Text, View, TextInput, TouchableOpacity,
-  Alert, ActivityIndicator
+  Alert, ActivityIndicator, Platform
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Plus, Trash2, CheckCircle, XCircle, Clock, ChevronDown } from 'lucide-react-native';
@@ -80,10 +80,22 @@ export const OrderManager: React.FC<Props> = ({ orders, inventory, warehouses, o
     }
   };
 
-  const handleDelete = (orderId: any, ref: string) => {
+  const handleDelete = async (orderId: any, ref: string) => {
+    const msg = `Delete order "${ref}"?`;
+    
+    if (Platform.OS === 'web') {
+      if (window.confirm(msg)) {
+        try {
+          await ApiService.deleteOrder(orderId);
+          onRefresh();
+        } catch (e: any) { Alert.alert('Error', e.message); }
+      }
+      return;
+    }
+
     Alert.alert(
       'Delete Order',
-      `Delete order "${ref}"?`,
+      msg,
       [
         { text: 'Cancel', style: 'cancel' },
         {

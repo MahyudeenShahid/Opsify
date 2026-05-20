@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   StyleSheet, Text, View, TextInput, TouchableOpacity,
-  Alert, ActivityIndicator
+  Alert, ActivityIndicator, Platform
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Pencil, Trash2, Plus, Check, X, Building2 } from 'lucide-react-native';
@@ -74,10 +74,23 @@ export const WarehouseManager: React.FC<Props> = ({ warehouses, onRefresh }) => 
     }
   };
 
-  const handleDelete = (wh: any) => {
+  const handleDelete = async (wh: any) => {
+    const msg = `Delete "${wh.name}"? Any products assigned here will lose their warehouse reference.`;
+    
+    if (Platform.OS === 'web') {
+      if (window.confirm(msg)) {
+        try {
+          const res = await ApiService.deleteWarehouse(wh.id);
+          if (res.status === 'error') Alert.alert('Failed', res.message);
+          else onRefresh();
+        } catch (e: any) { Alert.alert('Error', e.message); }
+      }
+      return;
+    }
+
     Alert.alert(
       'Delete Warehouse',
-      `Delete "${wh.name}"? Any products assigned here will lose their warehouse reference.`,
+      msg,
       [
         { text: 'Cancel', style: 'cancel' },
         {
