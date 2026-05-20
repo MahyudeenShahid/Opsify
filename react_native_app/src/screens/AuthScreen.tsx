@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Platform, Animated, Easing } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { Mail, Lock, User, Globe, ChevronRight } from 'lucide-react-native';
+import { Mail, Lock, User, Globe, ChevronRight, Eye, EyeOff } from 'lucide-react-native';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 
@@ -20,6 +20,7 @@ export const AuthScreen = () => {
   const [name, setName] = useState('');
   const [isLogin, setIsLogin] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   // Configure Google Sign-In requests for native targets
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
@@ -169,10 +170,17 @@ export const AuthScreen = () => {
               style={styles.input}
               placeholder="Password"
               placeholderTextColor={Theme.colors.textMuted}
-              secureTextEntry
+              secureTextEntry={!showPassword}
               value={password}
               onChangeText={setPassword}
             />
+            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ padding: 8, marginRight: -8 }}>
+              {showPassword ? (
+                <EyeOff color={Theme.colors.textMuted} size={20} />
+              ) : (
+                <Eye color={Theme.colors.textMuted} size={20} />
+              )}
+            </TouchableOpacity>
           </View>
 
           <AnimatedButton onPress={handleEmailAuth} disabled={isLoading} style={styles.primaryBtn}>
