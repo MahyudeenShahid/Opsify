@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   StyleSheet, Text, View, TextInput, TouchableOpacity,
-  Alert, ScrollView, ActivityIndicator
+  Alert, ActivityIndicator
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Plus, Trash2, CheckCircle, XCircle, Clock, ChevronDown } from 'lucide-react-native';
@@ -25,28 +25,35 @@ export const OrderManager: React.FC<Props> = ({ orders, inventory, warehouses, o
   const [showForm, setShowForm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Form state
+  // Form state — store the full object so we get both id and name
   const [customerName, setCustomerName] = useState('');
-  const [productId, setProductId]   = useState('');
-  const [warehouseId, setWarehouseId] = useState('1');
-  const [quantity, setQuantity]     = useState('');
-  const [unitPrice, setUnitPrice]   = useState('');
+  const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
+  const [selectedWarehouse, setSelectedWarehouse] = useState<any | null>(null);
+  const [quantity, setQuantity] = useState('');
+  const [unitPrice, setUnitPrice] = useState('');
+  const [showProductPicker, setShowProductPicker] = useState(false);
+  const [showWarehousePicker, setShowWarehousePicker] = useState(false);
 
   const handleAddOrder = async () => {
-    if (!customerName || !productId || !quantity || !unitPrice) {
-      Alert.alert('Incomplete', 'Fill in Customer, Product, Quantity and Unit Price.');
+    if (!customerName || !selectedProduct || !quantity || !unitPrice) {
+      Alert.alert('Incomplete', 'Please fill in Customer, select a Product, Quantity and Unit Price.');
       return;
     }
     setIsSubmitting(true);
     try {
+      const wh = selectedWarehouse || warehouses[0];
       await ApiService.addOrder({
         customer_name: customerName,
-        product_id: parseInt(productId),
-        warehouse_id: parseInt(warehouseId) || 1,
+        product_id: selectedProduct.id,
+        warehouse_id: wh ? wh.id : 1,
         quantity: parseFloat(quantity),
         unit_price: parseFloat(unitPrice),
       });
-      setCustomerName(''); setProductId(''); setQuantity(''); setUnitPrice(''); setWarehouseId('1');
+      setCustomerName('');
+      setSelectedProduct(null);
+      setSelectedWarehouse(null);
+      setQuantity('');
+      setUnitPrice('');
       setShowForm(false);
       onRefresh();
       Alert.alert('✅ Order Created', 'Order has been placed successfully.');
@@ -57,7 +64,14 @@ export const OrderManager: React.FC<Props> = ({ orders, inventory, warehouses, o
     }
   };
 
-  const handleStatusChange = async (orderId: number, newStatus: string) => {
+  // Auto-fill unit price from product's selling_price
+  const handleSelectProduct = (product: any) => {
+    setSelectedProduct(product);
+    if (product.selling_price) setUnitPrice(String(product.selling_price));
+    setShowProductPicker(false);
+  };
+
+  const handleStatusChange = async (orderId: any, newStatus: string) => {
     try {
       await ApiService.updateOrderStatus(orderId, newStatus);
       onRefresh();
@@ -66,7 +80,7 @@ export const OrderManager: React.FC<Props> = ({ orders, inventory, warehouses, o
     }
   };
 
-  const handleDelete = (orderId: number, ref: string) => {
+  const handleDelete = (orderId: any, ref: string) => {
     Alert.alert(
       'Delete Order',
       `Delete order "${ref}"?`,
@@ -115,7 +129,11 @@ export const OrderManager: React.FC<Props> = ({ orders, inventory, warehouses, o
 
       {/* Add Order Toggle */}
       <TouchableOpacity style={styles.addToggleBtn} onPress={() => setShowForm(!showForm)}>
-        <LinearGradient colors={showForm ? ['rgba(255,42,85,0.15)', 'rgba(255,42,85,0.05)'] : Theme.gradients.primary} style={[StyleSheet.absoluteFill, { borderRadius: Theme.borderRadius.md }]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} />
+        <LinearGradient
+          colors={showForm ? ['rgba(255,42,85,0.15)', 'rgba(255,42,85,0.05)'] : Theme.gradients.primary}
+          style={[StyleSheet.absoluteFill, { borderRadius: Theme.borderRadius.md }]}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+        />
         <Plus size={18} color={showForm ? Theme.colors.error : '#000'} />
         <Text style={[styles.addToggleText, { color: showForm ? Theme.colors.error : '#000' }]}>
           {showForm ? 'Cancel Order Form' : 'Create New Order'}
@@ -136,30 +154,45 @@ export const OrderManager: React.FC<Props> = ({ orders, inventory, warehouses, o
             onChangeText={setCustomerName}
           />
 
-          <View style={styles.row}>
-            <View style={styles.halfWrap}>
-              <Text style={styles.inputLabel}>PRODUCT ID *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. 1"
-                placeholderTextColor={Theme.colors.textMuted}
-                keyboardType="numeric"
-                value={productId}
-                onChangeText={setProductId}
-              />
+          {/* Product Selector */}
+          <Text style={styles.inputLabel}>PRODUCT *</Text>
+          <TouchableOpacity style={styles.selectorBtn} onPress={() => { setShowProductPicker(v => !v); setShowWarehousePicker(false); }}>
+            <Text style={[styles.selectorText, !selectedProduct && { color: Theme.colors.textMuted }]}>
+              {selectedProduct ? `${selectedProduct.name} (ID: ${selectedProduct.id})` : 'Tap to select product…'}
+            </Text>
+            <ChevronDown size={16} color={Theme.colors.textMuted} />
+          </TouchableOpacity>
+          {showProductPicker && (
+            <View style={styles.pickerList}>
+              {inventory.length === 0 ? (
+                <Text style={styles.pickerEmpty}>No products available. Add stock first.</Text>
+              ) : inventory.map((p: any) => (
+                <TouchableOpacity key={p.id} style={styles.pickerItem} onPress={() => handleSelectProduct(p)}>
+                  <Text style={styles.pickerItemTitle}>{p.name}</Text>
+                  <Text style={styles.pickerItemSub}>Stock: {p.stock} {p.unit} · Rs {p.selling_price}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
-            <View style={styles.halfWrap}>
-              <Text style={styles.inputLabel}>WAREHOUSE ID</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. 1"
-                placeholderTextColor={Theme.colors.textMuted}
-                keyboardType="numeric"
-                value={warehouseId}
-                onChangeText={setWarehouseId}
-              />
+          )}
+
+          {/* Warehouse Selector */}
+          <Text style={[styles.inputLabel, { marginTop: 4 }]}>WAREHOUSE</Text>
+          <TouchableOpacity style={styles.selectorBtn} onPress={() => { setShowWarehousePicker(v => !v); setShowProductPicker(false); }}>
+            <Text style={[styles.selectorText, !selectedWarehouse && { color: Theme.colors.textMuted }]}>
+              {selectedWarehouse ? selectedWarehouse.name : (warehouses[0]?.name || 'Tap to select warehouse…')}
+            </Text>
+            <ChevronDown size={16} color={Theme.colors.textMuted} />
+          </TouchableOpacity>
+          {showWarehousePicker && (
+            <View style={styles.pickerList}>
+              {warehouses.map((w: any) => (
+                <TouchableOpacity key={w.id} style={styles.pickerItem} onPress={() => { setSelectedWarehouse(w); setShowWarehousePicker(false); }}>
+                  <Text style={styles.pickerItemTitle}>{w.name}</Text>
+                  <Text style={styles.pickerItemSub}>{w.location}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
-          </View>
+          )}
 
           <View style={styles.row}>
             <View style={styles.halfWrap}>
@@ -202,19 +235,6 @@ export const OrderManager: React.FC<Props> = ({ orders, inventory, warehouses, o
               : <Text style={styles.submitText}>Place Order</Text>
             }
           </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Product Reference Helper */}
-      {showForm && inventory.length > 0 && (
-        <View style={styles.helperCard}>
-          <LinearGradient colors={['rgba(17,22,34,0.9)', 'rgba(7,10,14,0.9)']} style={StyleSheet.absoluteFill} />
-          <Text style={styles.helperTitle}>📦 Product IDs</Text>
-          {inventory.slice(0, 6).map((p: any) => (
-            <Text key={p.id} style={styles.helperText}>
-              ID {p.id} — {p.name} ({p.variant || p.unit}) · Stock: {p.stock}
-            </Text>
-          ))}
         </View>
       )}
 
@@ -317,16 +337,21 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 8 },
   halfWrap: { flex: 1 },
 
+  // Dropdown selector styles
+  selectorBtn: { height: 46, backgroundColor: Theme.colors.background, borderColor: Theme.colors.border, borderWidth: 1.5, borderRadius: Theme.borderRadius.md, paddingHorizontal: Theme.spacing.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Theme.spacing.sm },
+  selectorText: { color: '#FFF', fontSize: 14, flex: 1 },
+  pickerList: { backgroundColor: 'rgba(26,34,52,0.98)', borderRadius: Theme.borderRadius.md, borderWidth: 1, borderColor: Theme.colors.border, marginBottom: Theme.spacing.sm, maxHeight: 200, overflow: 'hidden' },
+  pickerItem: { paddingVertical: 10, paddingHorizontal: Theme.spacing.md, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
+  pickerItemTitle: { color: '#FFF', fontSize: 13, fontWeight: '700' },
+  pickerItemSub: { color: Theme.colors.textMuted, fontSize: 11, marginTop: 1 },
+  pickerEmpty: { color: Theme.colors.textMuted, fontSize: 13, padding: Theme.spacing.md, textAlign: 'center' },
+
   totalPreview: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(0,230,118,0.08)', borderRadius: Theme.borderRadius.sm, padding: Theme.spacing.sm, marginBottom: Theme.spacing.sm, borderWidth: 1, borderColor: 'rgba(0,230,118,0.2)' },
   totalLabel: { color: Theme.colors.textMuted, fontSize: 13 },
   totalValue: { color: Theme.colors.primary, fontSize: 16, fontWeight: '900' },
 
   submitBtn: { height: 48, borderRadius: Theme.borderRadius.md, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   submitText: { color: '#000', fontSize: 14, fontWeight: '900' },
-
-  helperCard: { borderRadius: Theme.borderRadius.md, borderWidth: 1, borderColor: Theme.colors.border, padding: Theme.spacing.md, marginBottom: Theme.spacing.md, overflow: 'hidden' },
-  helperTitle: { color: Theme.colors.textMuted, fontSize: 12, fontWeight: '800', marginBottom: 6 },
-  helperText: { color: Theme.colors.textMuted, fontSize: 11, marginBottom: 2 },
 
   listTitle: { color: '#FFF', fontSize: 16, fontWeight: '800', marginBottom: Theme.spacing.md, letterSpacing: -0.3 },
 

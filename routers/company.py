@@ -332,7 +332,7 @@ def api_add_order(req: OrderRequest, x_user_id: Optional[str] = Header(None)):
 
 
 @router.put("/api/orders/{order_id}/status")
-def api_update_order_status(order_id: int, req: OrderStatusRequest,
+def api_update_order_status(order_id: str, req: OrderStatusRequest,
                             x_user_id: Optional[str] = Header(None)):
     res = update_order_status(order_id, req.status, _uid(x_user_id))
     if res["status"] == "error":
@@ -341,7 +341,7 @@ def api_update_order_status(order_id: int, req: OrderStatusRequest,
 
 
 @router.post("/api/orders/{order_id}/dispatch")
-def api_dispatch_order(order_id: int, req: DispatchRequest,
+def api_dispatch_order(order_id: str, req: DispatchRequest,
                        x_user_id: Optional[str] = Header(None)):
     res = dispatch_order(order_id, req.courier_name, req.courier_phone, _uid(x_user_id))
     if res["status"] == "error":
@@ -350,7 +350,7 @@ def api_dispatch_order(order_id: int, req: DispatchRequest,
 
 
 @router.delete("/api/orders/{order_id}")
-def api_delete_order(order_id: int, x_user_id: Optional[str] = Header(None)):
+def api_delete_order(order_id: str, x_user_id: Optional[str] = Header(None)):
     res = delete_order(order_id, _uid(x_user_id))
     if res["status"] == "error":
         raise HTTPException(status_code=404, detail=res["message"])

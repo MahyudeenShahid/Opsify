@@ -17,7 +17,7 @@ from firebase_admin import firestore
 from firebase_store import get_firestore_client, utc_now
 
 # ── Default/fallback user for backward compat ──────────────────────────────────
-DEFAULT_USER_ID = "__shared__"
+DEFAULT_USER_ID = "shared_default"
 
 # Collection names (relative to users/{uid}/)
 COL_WAREHOUSES      = "warehouses"
@@ -241,12 +241,6 @@ def delete_warehouse(warehouse_id: Any, user_id: str = DEFAULT_USER_ID) -> Dict[
             pass
     if not ref.get().exists:
         return {"status": "error", "message": f"Warehouse {warehouse_id} not found."}
-    
-    # Optional: prevent deleting the last warehouse
-    all_wh = list(_col(user_id, COL_WAREHOUSES).stream())
-    if len(all_wh) <= 1:
-        return {"status": "error", "message": "Cannot delete the only remaining warehouse."}
-        
     ref.delete()
     log_activity(user_id, "DELETE", "warehouse", {"id": warehouse_id})
     return {"status": "success", "id": warehouse_id}
@@ -255,7 +249,8 @@ def delete_warehouse(warehouse_id: Any, user_id: str = DEFAULT_USER_ID) -> Dict[
 # ── Suppliers ─────────────────────────────────────────────────────────────────
 
 def get_suppliers(user_id: str = DEFAULT_USER_ID) -> List[Dict[str, Any]]:
-    return [_doc_data(doc) for doc in _col(user_id, COL_SUPPLIERS).order_by("id").stream()]
+    docs = [_doc_data(doc) for doc in _col(user_id, COL_SUPPLIERS).stream()]
+    return sorted(docs, key=lambda d: d.get("id", 0))
 
 
 def _find_supplier_by_name(name: str, user_id: str) -> Optional[Dict[str, Any]]:
@@ -581,11 +576,18 @@ def add_order(order_ref: str, customer_name: str, product_id: int, warehouse_id:
     return {"status": "success", "id": oid}
 
 
-def update_order_status(order_id: int, status: str, user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
+def update_order_status(order_id: Any, status: str, user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
     valid = {"PENDING", "PACKED", "DISPATCHED", "FULFILLED", "CANCELLED"}
     if status not in valid:
         return {"status": "error", "message": f"Invalid status '{status}'. Use: {valid}"}
-    ref = _col(user_id, COL_ORDERS).document(str(int(order_id)))
+    db_id = str(order_id)
+    ref = _col(user_id, COL_ORDERS).document(db_id)
+    if not ref.get().exists:
+        try:
+            int_id = str(int(float(order_id)))
+            ref = _col(user_id, COL_ORDERS).document(int_id)
+        except Exception:
+            pass
     if not ref.get().exists:
         return {"status": "error", "message": f"Order {order_id} not found."}
     ref.update({"status": status, "updated_at": utc_now().isoformat()})
@@ -593,8 +595,15 @@ def update_order_status(order_id: int, status: str, user_id: str = DEFAULT_USER_
     return {"status": "success", "id": order_id}
 
 
-def delete_order(order_id: int, user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
-    ref = _col(user_id, COL_ORDERS).document(str(int(order_id)))
+def delete_order(order_id: Any, user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
+    db_id = str(order_id)
+    ref = _col(user_id, COL_ORDERS).document(db_id)
+    if not ref.get().exists:
+        try:
+            int_id = str(int(float(order_id)))
+            ref = _col(user_id, COL_ORDERS).document(int_id)
+        except Exception:
+            pass
     if not ref.get().exists:
         return {"status": "error", "message": f"Order {order_id} not found."}
     ref.delete()
@@ -602,9 +611,16 @@ def delete_order(order_id: int, user_id: str = DEFAULT_USER_ID) -> Dict[str, Any
     return {"status": "success", "id": order_id}
 
 
-def dispatch_order(order_id: int, courier_name: str, courier_phone: str,
+def dispatch_order(order_id: Any, courier_name: str, courier_phone: str,
                    user_id: str = DEFAULT_USER_ID) -> Dict[str, Any]:
-    ref = _col(user_id, COL_ORDERS).document(str(int(order_id)))
+    db_id = str(order_id)
+    ref = _col(user_id, COL_ORDERS).document(db_id)
+    if not ref.get().exists:
+        try:
+            int_id = str(int(float(order_id)))
+            ref = _col(user_id, COL_ORDERS).document(int_id)
+        except Exception:
+            pass
     if not ref.get().exists:
         return {"status": "error", "message": f"Order {order_id} not found."}
     ref.update({

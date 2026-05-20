@@ -75,13 +75,9 @@ export const WarehouseManager: React.FC<Props> = ({ warehouses, onRefresh }) => 
   };
 
   const handleDelete = (wh: any) => {
-    if (warehouses.length <= 1) {
-      Alert.alert('Action Denied', 'Cannot delete the only remaining warehouse.');
-      return;
-    }
     Alert.alert(
       'Delete Warehouse',
-      `Delete warehouse "${wh.name}"? This will fail if there are active stocks associated.`,
+      `Delete "${wh.name}"? Any products assigned here will lose their warehouse reference.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
