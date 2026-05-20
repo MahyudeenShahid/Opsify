@@ -67,7 +67,7 @@ export const InventoryDashboardScreen: React.FC = () => {
   const handleDownloadCSV = async () => {
     setIsDownloadingCSV(true);
     try {
-      Linking.openURL(`http://localhost:8000/api/export/csv`).catch(err => Alert.alert('Error', err.message));
+      Linking.openURL(ApiService.getExportCsvUrl()).catch(err => Alert.alert('Error', err.message));
     } catch (e: any) {
       Alert.alert('Download Failed', e.message);
     } finally {

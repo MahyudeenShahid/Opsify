@@ -517,21 +517,21 @@ async def api_chat(req: ChatRequest, x_user_id: Optional[str] = Header(None)):
 # ── CSV Export ───────────────────────────────────────────────────────────────
 
 @router.get("/api/export/csv")
-def api_export_csv(x_user_id: Optional[str] = Header(None)):
+def api_export_csv(uid: Optional[str] = Query(None), x_user_id: Optional[str] = Header(None)):
     from fastapi.responses import StreamingResponse
-    uid = _uid(x_user_id)
+    user = uid or _uid(x_user_id)
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["--- INVENTORY & STOCK ---"])
-    products = get_products(uid)
+    products = get_products(user)
     if products:
         writer.writerow(products[0].keys()); [writer.writerow(p.values()) for p in products]
     writer.writerow([]); writer.writerow(["--- TRANSACTIONS ---"])
-    txs = get_transactions(uid)
+    txs = get_transactions(user)
     if txs:
         writer.writerow(txs[0].keys()); [writer.writerow(t.values()) for t in txs]
     writer.writerow([]); writer.writerow(["--- SUPPLIERS ---"])
-    sups = get_suppliers(uid)
+    sups = get_suppliers(user)
     if sups:
         writer.writerow(sups[0].keys()); [writer.writerow(s.values()) for s in sups]
     output.seek(0)

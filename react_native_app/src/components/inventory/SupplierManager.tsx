@@ -10,6 +10,7 @@ const { width } = Dimensions.get('window');
 export const SupplierManager: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'directory' | 'scout'>('directory');
   const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [showAddForm, setShowAddForm] = useState(false);
   
   // Manual Supplier Form State
   const [name, setName] = useState('');
@@ -104,7 +105,9 @@ export const SupplierManager: React.FC = () => {
 
   const handleAddSupplier = async () => {
     if (!name || !contact || !rating || !reliability || !leadTime) {
-      Alert.alert('Incomplete Form', 'Please satisfy all operational metrics before onboarding.');
+      const msg = 'Please satisfy all operational metrics before onboarding.';
+      if (Platform.OS === 'web') window.alert(msg);
+      else Alert.alert('Incomplete Form', msg);
       return;
     }
 
@@ -117,10 +120,14 @@ export const SupplierManager: React.FC = () => {
         lead_time_days: parseInt(leadTime),
       });
       setName(''); setContact(''); setRating(''); setReliability(''); setLeadTime('');
+      setShowAddForm(false);
       fetchSuppliers();
-      Alert.alert('Supplier Onboarded', 'The distributor has been successfully cataloged.');
+      const sMsg = 'The distributor has been successfully cataloged.';
+      if (Platform.OS === 'web') window.alert('Supplier Onboarded: ' + sMsg);
+      else Alert.alert('Supplier Onboarded', sMsg);
     } catch (e: any) {
-      Alert.alert('Registry Error', e.message);
+      if (Platform.OS === 'web') window.alert('Registry Error: ' + e.message);
+      else Alert.alert('Registry Error', e.message);
     }
   };
 
@@ -227,8 +234,8 @@ export const SupplierManager: React.FC = () => {
                     if (Platform.OS === 'web') {
                       if (window.confirm(msg)) {
                         ApiService.deleteAllSuppliers()
-                          .then(() => { fetchSuppliers(); Alert.alert('Done', 'All suppliers removed.'); })
-                          .catch(e => Alert.alert('Error', e.message));
+                          .then(() => { fetchSuppliers(); window.alert('Done: All suppliers removed.'); })
+                          .catch(e => window.alert('Error: ' + e.message));
                       }
                       return;
                     }
@@ -260,6 +267,39 @@ export const SupplierManager: React.FC = () => {
               )}
             </View>
 
+            {/* Add Manual Form Toggle */}
+            <TouchableOpacity style={{ height: 48, borderRadius: Theme.borderRadius.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: Theme.spacing.md, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }} onPress={() => setShowAddForm(!showAddForm)}>
+              <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '800' }}>
+                {showAddForm ? 'Cancel Manual Entry' : '+ Add Supplier Manually'}
+              </Text>
+            </TouchableOpacity>
+
+            {showAddForm && (
+              <View style={{ borderRadius: Theme.borderRadius.lg, borderWidth: 1.5, borderColor: Theme.colors.border, padding: Theme.spacing.md, marginBottom: Theme.spacing.md, overflow: 'hidden' }}>
+                <LinearGradient pointerEvents="none" colors={['rgba(26,34,52,0.95)', 'rgba(17,22,34,0.95)']} style={StyleSheet.absoluteFill} />
+                <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '800', marginBottom: Theme.spacing.md }}>✍️ Manual Supplier Entry</Text>
+                
+                <TextInput style={styles.input} placeholder="Company Name *" placeholderTextColor={Theme.colors.textMuted} value={name} onChangeText={setName} />
+                <TextInput style={styles.input} placeholder="Contact Info *" placeholderTextColor={Theme.colors.textMuted} value={contact} onChangeText={setContact} />
+                
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <View style={{ flex: 1 }}>
+                    <TextInput style={styles.input} placeholder="Rating (1-5) *" placeholderTextColor={Theme.colors.textMuted} keyboardType="numeric" value={rating} onChangeText={setRating} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <TextInput style={styles.input} placeholder="Reliability % *" placeholderTextColor={Theme.colors.textMuted} keyboardType="numeric" value={reliability} onChangeText={setReliability} />
+                  </View>
+                </View>
+                
+                <TextInput style={styles.input} placeholder="Lead Time (Days) *" placeholderTextColor={Theme.colors.textMuted} keyboardType="numeric" value={leadTime} onChangeText={setLeadTime} />
+
+                <TouchableOpacity style={{ height: 48, borderRadius: Theme.borderRadius.md, alignItems: 'center', justifyContent: 'center', marginTop: 8 }} onPress={handleAddSupplier}>
+                  <LinearGradient colors={Theme.gradients.secondary} style={[StyleSheet.absoluteFill, { borderRadius: Theme.borderRadius.md }]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} />
+                  <Text style={{ color: '#000', fontSize: 14, fontWeight: '900' }}>Save Supplier</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             {suppliers.map((sup) => (
               <View key={sup.id} style={styles.luxuryCard}>
                 <LinearGradient colors={Theme.gradients.surface} style={[StyleSheet.absoluteFill, { borderRadius: Theme.borderRadius.lg }]} />
@@ -278,7 +318,7 @@ export const SupplierManager: React.FC = () => {
                           if (window.confirm(msg)) {
                             ApiService.deleteSupplier(sup.id)
                               .then(() => fetchSuppliers())
-                              .catch(e => Alert.alert('Error', e.message));
+                              .catch(e => window.alert('Error: ' + e.message));
                           }
                           return;
                         }

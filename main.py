@@ -32,7 +32,7 @@ _OPSIFY_API_KEY = os.environ.get("OPSIFY_API_KEY", "")
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 # Paths exempt from authentication
-UNPROTECTED_PATHS = {"/", "/docs", "/redoc", "/openapi.json", "/ws/events", "/api/map/render", "/api/petrol/price"}
+UNPROTECTED_PATHS = {"/", "/docs", "/redoc", "/openapi.json", "/ws/events", "/api/map/render", "/api/petrol/price", "/api/export/csv", "/favicon.ico"}
 
 @app.middleware("http")
 async def api_key_middleware(request: Request, call_next):

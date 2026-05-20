@@ -393,7 +393,7 @@ export const ApiService = {
   },
 
   getExportCsvUrl(): string {
-    return `${BASE_URL}/export/csv`;
+    return `${BASE_URL}/export/csv?uid=${getUserId()}`;
   },
 
   // ─── Product CRUD ─────────────────────────────────────────────────────────

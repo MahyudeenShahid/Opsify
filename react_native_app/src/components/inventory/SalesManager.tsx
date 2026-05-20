@@ -123,7 +123,7 @@ export const SalesManager: React.FC<Props> = ({ ledger, inventory, onRefresh }) 
       {/* Sale Form */}
       {showForm && (
         <View style={styles.formCard}>
-          <LinearGradient colors={['rgba(26,34,52,0.95)', 'rgba(17,22,34,0.95)']} style={StyleSheet.absoluteFill} />
+          <LinearGradient pointerEvents="none" colors={['rgba(26,34,52,0.95)', 'rgba(17,22,34,0.95)']} style={StyleSheet.absoluteFill} />
           <Text style={styles.formTitle}>💰 Record New Sale</Text>
 
           <View style={styles.row}>

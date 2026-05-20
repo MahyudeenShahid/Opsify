@@ -35,8 +35,16 @@ export const OrderManager: React.FC<Props> = ({ orders, inventory, warehouses, o
   const [showWarehousePicker, setShowWarehousePicker] = useState(false);
 
   const handleAddOrder = async () => {
-    if (!customerName || !selectedProduct || !quantity || !unitPrice) {
-      Alert.alert('Incomplete', 'Please fill in Customer, select a Product, Quantity and Unit Price.');
+    let missing = [];
+    if (!customerName) missing.push("Customer Name");
+    if (!selectedProduct) missing.push("Product");
+    if (!quantity) missing.push("Quantity");
+    if (!unitPrice) missing.push("Unit Price");
+    
+    if (missing.length > 0) {
+      const msg = 'Missing fields: ' + missing.join(', ');
+      if (Platform.OS === 'web') window.alert(msg);
+      else Alert.alert('Incomplete', msg);
       return;
     }
     setIsSubmitting(true);
@@ -56,9 +64,11 @@ export const OrderManager: React.FC<Props> = ({ orders, inventory, warehouses, o
       setUnitPrice('');
       setShowForm(false);
       onRefresh();
-      Alert.alert('✅ Order Created', 'Order has been placed successfully.');
+      if (Platform.OS === 'web') window.alert('✅ Order Created: Order has been placed successfully.');
+      else Alert.alert('✅ Order Created', 'Order has been placed successfully.');
     } catch (e: any) {
-      Alert.alert('Error', e.message);
+      if (Platform.OS === 'web') window.alert('Error: ' + e.message);
+      else Alert.alert('Error', e.message);
     } finally {
       setIsSubmitting(false);
     }
@@ -121,17 +131,17 @@ export const OrderManager: React.FC<Props> = ({ orders, inventory, warehouses, o
       {/* Summary Row */}
       <View style={styles.summaryRow}>
         <View style={styles.summaryCard}>
-          <LinearGradient colors={['rgba(255,196,0,0.1)', 'transparent']} style={StyleSheet.absoluteFill} />
+          <LinearGradient pointerEvents="none" colors={['rgba(255,196,0,0.1)', 'transparent']} style={StyleSheet.absoluteFill} />
           <Text style={styles.summaryLabel}>TOTAL ORDERS</Text>
           <Text style={[styles.summaryValue, { color: Theme.colors.secondary }]}>{orders.length}</Text>
         </View>
         <View style={styles.summaryCard}>
-          <LinearGradient colors={['rgba(255,184,0,0.1)', 'transparent']} style={StyleSheet.absoluteFill} />
+          <LinearGradient pointerEvents="none" colors={['rgba(255,184,0,0.1)', 'transparent']} style={StyleSheet.absoluteFill} />
           <Text style={styles.summaryLabel}>PENDING</Text>
           <Text style={[styles.summaryValue, { color: '#FFB800' }]}>{pendingCount}</Text>
         </View>
         <View style={styles.summaryCard}>
-          <LinearGradient colors={['rgba(0,230,118,0.1)', 'transparent']} style={StyleSheet.absoluteFill} />
+          <LinearGradient pointerEvents="none" colors={['rgba(0,230,118,0.1)', 'transparent']} style={StyleSheet.absoluteFill} />
           <Text style={styles.summaryLabel}>ORDER VALUE</Text>
           <Text style={[styles.summaryValue, { color: Theme.colors.primary }]}>
             {totalRevenue >= 1000 ? `Rs ${(totalRevenue / 1000).toFixed(1)}K` : `Rs ${totalRevenue.toFixed(0)}`}
@@ -142,6 +152,7 @@ export const OrderManager: React.FC<Props> = ({ orders, inventory, warehouses, o
       {/* Add Order Toggle */}
       <TouchableOpacity style={styles.addToggleBtn} onPress={() => setShowForm(!showForm)}>
         <LinearGradient
+          pointerEvents="none"
           colors={showForm ? ['rgba(255,42,85,0.15)', 'rgba(255,42,85,0.05)'] : Theme.gradients.primary}
           style={[StyleSheet.absoluteFill, { borderRadius: Theme.borderRadius.md }]}
           start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
@@ -155,7 +166,7 @@ export const OrderManager: React.FC<Props> = ({ orders, inventory, warehouses, o
       {/* Create Order Form */}
       {showForm && (
         <View style={styles.formCard}>
-          <LinearGradient colors={['rgba(26,34,52,0.95)', 'rgba(17,22,34,0.95)']} style={StyleSheet.absoluteFill} />
+          <LinearGradient pointerEvents="none" colors={['rgba(26,34,52,0.95)', 'rgba(17,22,34,0.95)']} style={StyleSheet.absoluteFill} />
           <Text style={styles.formTitle}>📋 New Order</Text>
 
           <TextInput
@@ -241,7 +252,7 @@ export const OrderManager: React.FC<Props> = ({ orders, inventory, warehouses, o
           ) : null}
 
           <TouchableOpacity style={[styles.submitBtn, isSubmitting && { opacity: 0.7 }]} onPress={handleAddOrder} disabled={isSubmitting}>
-            <LinearGradient colors={Theme.gradients.secondary} style={[StyleSheet.absoluteFill, { borderRadius: Theme.borderRadius.md }]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} />
+            <LinearGradient pointerEvents="none" colors={Theme.gradients.secondary} style={[StyleSheet.absoluteFill, { borderRadius: Theme.borderRadius.md }]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} />
             {isSubmitting
               ? <ActivityIndicator size="small" color="#000" />
               : <Text style={styles.submitText}>Place Order</Text>
@@ -263,7 +274,7 @@ export const OrderManager: React.FC<Props> = ({ orders, inventory, warehouses, o
         const Icon = cfg.icon;
         return (
           <View key={order.id} style={[styles.orderCard, { borderColor: `${cfg.color}40` }]}>
-            <LinearGradient colors={[cfg.bg, 'rgba(17,22,34,0.9)']} style={StyleSheet.absoluteFill} />
+            <LinearGradient pointerEvents="none" colors={[cfg.bg, 'rgba(17,22,34,0.9)']} style={StyleSheet.absoluteFill} />
 
             {/* Order Header */}
             <View style={styles.orderHeader}>
