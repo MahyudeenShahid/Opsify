@@ -22,6 +22,11 @@ export const OmniChatScreen = ({ currentUserId, setIsFloatingBotHidden }: Props)
     if (setIsFloatingBotHidden) {
       setIsFloatingBotHidden(screen === 'room');
     }
+    return () => {
+      if (setIsFloatingBotHidden) {
+        setIsFloatingBotHidden(false);
+      }
+    };
   }, [screen, setIsFloatingBotHidden]);
 
   if (!currentUserId) return null;

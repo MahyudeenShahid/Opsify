@@ -12,7 +12,57 @@ import { OrderManager } from '../components/inventory/OrderManager';
 import { ActivityLogViewer } from '../components/inventory/ActivityLogViewer';
 import { WarehouseManager } from '../components/inventory/WarehouseManager';
 
-// Removed: SalesManager, SupplierManager (Suppliers are in Agent tab, Sales are in Activity log)
+// ─── Shimmer Skeleton ─────────────────────────────────────────────────────────
+const ShimmerSkeleton = () => {
+  const shimmer = React.useRef(new Animated.Value(0)).current;
+  React.useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmer, { toValue: 1, duration: 1200, useNativeDriver: true }),
+        Animated.timing(shimmer, { toValue: 0, duration: 1200, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+  const opacity = shimmer.interpolate({ inputRange: [0, 1], outputRange: [0.3, 0.7] });
+  const SkeletonBlock = ({ height = 60, width = '100%' as any, borderRadius = 12, style = {} as any }) => (
+    <Animated.View style={[{ height, width, borderRadius, backgroundColor: Theme.colors.surfaceMid, marginBottom: 12, opacity }, style]} />
+  );
+  return (
+    <View style={{ padding: 16, gap: 4 }}>
+      <SkeletonBlock height={30} width="55%" />
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <SkeletonBlock height={90} width="48%" />
+        <SkeletonBlock height={90} width="48%" />
+      </View>
+      <SkeletonBlock height={60} />
+      <SkeletonBlock height={60} />
+      <SkeletonBlock height={60} />
+    </View>
+  );
+};
+
+// ─── Animated Tab Button ──────────────────────────────────────────────────────
+const AnimatedTabButton = ({ tab, isActive, onPress }: { tab: typeof TABS[0]; isActive: boolean; onPress: () => void }) => {
+  const scale   = React.useRef(new Animated.Value(1)).current;
+  const bgAnim  = React.useRef(new Animated.Value(isActive ? 1 : 0)).current;
+  React.useEffect(() => {
+    Animated.spring(bgAnim, { toValue: isActive ? 1 : 0, ...Theme.animation.springFast, useNativeDriver: false }).start();
+  }, [isActive]);
+  const Icon = tab.icon;
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      onPressIn={() => Animated.spring(scale, { toValue: 0.92, ...Theme.animation.springFast, useNativeDriver: true }).start()}
+      onPressOut={() => Animated.spring(scale, { toValue: 1, ...Theme.animation.spring, useNativeDriver: true }).start()}
+      activeOpacity={1}
+    >
+      <Animated.View style={[styles.tabButton, isActive && styles.tabButtonActive, { transform: [{ scale }] }]}>
+        <Icon size={14} color={isActive ? Theme.colors.primary : Theme.colors.textMuted} />
+        <Text style={[styles.tabText, isActive && styles.tabTextActive]}>{tab.label}</Text>
+      </Animated.View>
+    </TouchableOpacity>
+  );
+};
 type SubTab = 'overview' | 'stock' | 'orders' | 'warehouses' | 'activity';
 
 const TABS: { id: SubTab; label: string; icon: any }[] = [
@@ -112,20 +162,14 @@ export const InventoryDashboardScreen: React.FC = () => {
       <View style={styles.tabWrapper}>
         <BlurView intensity={30} tint="dark" style={styles.tabContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabScroll}>
-            {TABS.map(tab => {
-              const isActive = activeTab === tab.id;
-              const Icon = tab.icon;
-              return (
-                <TouchableOpacity
-                  key={tab.id}
-                  style={[styles.tabButton, isActive && styles.tabButtonActive]}
-                  onPress={() => setActiveTab(tab.id)}
-                >
-                  <Icon size={14} color={isActive ? '#FFF' : Theme.colors.textMuted} />
-                  <Text style={[styles.tabText, isActive && styles.tabTextActive]}>{tab.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
+            {TABS.map(tab => (
+              <AnimatedTabButton
+                key={tab.id}
+                tab={tab}
+                isActive={activeTab === tab.id}
+                onPress={() => setActiveTab(tab.id)}
+              />
+            ))}
           </ScrollView>
         </BlurView>
       </View>
@@ -136,10 +180,7 @@ export const InventoryDashboardScreen: React.FC = () => {
       ) : (
         <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
           {isLoading ? (
-            <View style={styles.loaderContainer}>
-              <ActivityIndicator size="large" color={Theme.colors.primary} />
-              <Text style={styles.loaderText}>Syncing ERP Data...</Text>
-            </View>
+            <ShimmerSkeleton />
           ) : (
             <Animated.View style={{ opacity: contentOpacity }}>
               {activeTab === 'overview' && (
@@ -196,9 +237,13 @@ const styles = StyleSheet.create({
   tabContainer: { backgroundColor: Theme.colors.glass },
   tabScroll: { flexDirection: 'row', paddingHorizontal: 4, paddingVertical: 4, gap: 2 },
   tabButton: { flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 14, alignItems: 'center', gap: 5, borderRadius: Theme.borderRadius.pill },
-  tabButtonActive: { backgroundColor: 'rgba(255,255,255,0.1)' },
+  tabButtonActive: {
+    backgroundColor: 'rgba(0,230,118,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,230,118,0.25)',
+  },
   tabText: { color: Theme.colors.textMuted, fontSize: 12, fontWeight: '600' },
-  tabTextActive: { color: '#FFF', fontWeight: 'bold' },
+  tabTextActive: { color: Theme.colors.primary, fontWeight: '800' },
 
   scrollContainer: { flex: 1 },
   contentContainer: { paddingHorizontal: Theme.spacing.md, paddingBottom: Theme.spacing.xxl * 2 },

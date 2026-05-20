@@ -33,7 +33,12 @@ from company_brain.firestore_inventory import (
     DEFAULT_USER_ID,
     save_push_token,
 )
-from company_brain.notifications import send_push_notification
+from company_brain.notifications import (
+    send_push_notification,
+    get_notifications,
+    mark_notification_read,
+    mark_all_notifications_read,
+)
 
 router = APIRouter()
 
@@ -391,8 +396,25 @@ def api_update_push_token(req: PushTokenRequest, x_user_id: Optional[str] = Head
 @router.post("/api/users/test-push")
 def api_test_push_token(background_tasks: BackgroundTasks, x_user_id: Optional[str] = Header(None)):
     uid = _uid(x_user_id)
-    background_tasks.add_task(send_push_notification, uid, "Push Notification Test", "Your push notification system is working perfectly!")
+    background_tasks.add_task(send_push_notification, uid, "Push Notification Test", "Your push notification system is working perfectly! ✅")
     return {"message": "Test push initiated"}
+
+
+@router.get("/api/users/notifications")
+def api_get_notifications(limit: int = 50, x_user_id: Optional[str] = Header(None)):
+    return get_notifications(_uid(x_user_id), limit)
+
+
+@router.patch("/api/users/notifications/{notif_id}/read")
+def api_mark_notification_read(notif_id: str, x_user_id: Optional[str] = Header(None)):
+    mark_notification_read(_uid(x_user_id), notif_id)
+    return {"message": "Marked as read"}
+
+
+@router.post("/api/users/notifications/mark-all-read")
+def api_mark_all_notifications_read(x_user_id: Optional[str] = Header(None)):
+    mark_all_notifications_read(_uid(x_user_id))
+    return {"message": "All notifications marked as read"}
 
 @router.post("/api/onboarding/seed")
 def api_onboarding_seed(x_user_id: Optional[str] = Header(None)):

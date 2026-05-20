@@ -872,24 +872,39 @@ export const CustomerBrainScreen: React.FC = () => {
       )}
 
       {/* ── RUN AGENT Button ────────────────────────────────────────────────── */}
-      <TouchableOpacity
-        style={[styles.runBtn, isScanning && styles.runBtnDisabled]}
-        onPress={handleRunAgent}
-        disabled={isScanning}
-      >
-        <LinearGradient
-          colors={isScanning ? ['rgba(0,230,118,0.2)', 'rgba(0,230,118,0.05)'] : Theme.gradients.primary}
-          style={[StyleSheet.absoluteFill, { borderRadius: Theme.borderRadius.xl }]}
-          start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-        />
-        {isScanning ? (
-          <><ActivityIndicator size="small" color={Theme.colors.primary} />
-            <Text style={[styles.runBtnText, { color: Theme.colors.primary }]}>Scanning Chats...</Text></>
-        ) : (
-          <><Play size={20} color="#000" />
-            <Text style={styles.runBtnText}>Run System 1 Agent</Text></>
+      <View style={styles.runBtnWrap}>
+        {isScanning && (
+          <>
+            <Animated.View style={[styles.runBtnRing, styles.runBtnRing1, {
+              opacity: agentDotPulse.interpolate({ inputRange: [1, 1.5], outputRange: [0.4, 0] }),
+              transform: [{ scale: agentDotPulse.interpolate({ inputRange: [1, 1.5], outputRange: [1, 1.6] }) }],
+            }]} />
+            <Animated.View style={[styles.runBtnRing, styles.runBtnRing2, {
+              opacity: agentDotPulse.interpolate({ inputRange: [1, 1.5], outputRange: [0.25, 0] }),
+              transform: [{ scale: agentDotPulse.interpolate({ inputRange: [1, 1.5], outputRange: [1, 2.2] }) }],
+            }]} />
+          </>
         )}
-      </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.runBtn, isScanning && styles.runBtnDisabled]}
+          onPress={handleRunAgent}
+          disabled={isScanning}
+          activeOpacity={0.85}
+        >
+          <LinearGradient
+            colors={isScanning ? ['rgba(0,230,118,0.15)', 'rgba(0,230,118,0.05)'] : Theme.gradients.primary}
+            style={[StyleSheet.absoluteFill, { borderRadius: Theme.borderRadius.xl }]}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+          />
+          {isScanning ? (
+            <><ActivityIndicator size="small" color={Theme.colors.primary} />
+              <Text style={[styles.runBtnText, { color: Theme.colors.primary }]}>Scanning Chats...</Text></>
+          ) : (
+            <><Play size={20} color="#000" />
+              <Text style={styles.runBtnText}>Run System 1 Agent</Text></>
+          )}
+        </TouchableOpacity>
+      </View>
 
       {/* ── Scan Progress ───────────────────────────────────────────────────── */}
       {(isScanning || scanProgress.length > 0) && (
@@ -1195,4 +1210,28 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: Theme.colors.textMuted,
   },
+
+  runBtnWrap: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Theme.spacing.md,
+  },
+  runBtnRing1: {
+    position: 'absolute',
+    width: '100%',
+    height: 56,
+    borderRadius: Theme.borderRadius.xl,
+    borderWidth: 1.5,
+    borderColor: Theme.colors.primary,
+  },
+  runBtnRing2: {
+    position: 'absolute',
+    width: '100%',
+    height: 56,
+    borderRadius: Theme.borderRadius.xl,
+    borderWidth: 1,
+    borderColor: Theme.colors.primary,
+  },
+  runBtnRing: {},
 });

@@ -568,6 +568,37 @@ export const ApiService = {
     return response.json();
   },
 
+  // ─── Notifications ────────────────────────────────────────────────────────
+  async getNotifications(limit = 50): Promise<any[]> {
+    try {
+      const response = await fetch(`${BASE_URL}/users/notifications?limit=${limit}`, {
+        headers: authHeaders(),
+      });
+      if (!response.ok) return [];
+      return response.json();
+    } catch {
+      return [];
+    }
+  },
+
+  async markNotificationRead(notifId: string): Promise<void> {
+    try {
+      await fetch(`${BASE_URL}/users/notifications/${notifId}/read`, {
+        method: 'PATCH',
+        headers: authHeaders(),
+      });
+    } catch {}
+  },
+
+  async markAllNotificationsRead(): Promise<void> {
+    try {
+      await fetch(`${BASE_URL}/users/notifications/mark-all-read`, {
+        method: 'POST',
+        headers: authHeaders(),
+      });
+    } catch {}
+  },
+
 };
 
 

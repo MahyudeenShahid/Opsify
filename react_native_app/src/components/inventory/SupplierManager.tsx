@@ -507,7 +507,7 @@ export const SupplierManager: React.FC = () => {
                   </View>
 
                   <TouchableOpacity style={[styles.onboardButton, isAdded && styles.successButton]} onPress={() => onboardScoutedSupplier(vendor)}>
-                    <LinearGradient colors={isAdded ? Theme.gradients.success : Theme.gradients.secondary} style={[StyleSheet.absoluteFill, { borderRadius: Theme.borderRadius.md }]} start={{x: 0, y: 0}} end={{x: 1, y: 0}} />
+                    <LinearGradient colors={isAdded ? Theme.gradients.primarySoft : Theme.gradients.secondary} style={[StyleSheet.absoluteFill, { borderRadius: Theme.borderRadius.md }]} start={{x: 0, y: 0}} end={{x: 1, y: 0}} />
                     <Text style={styles.onboardButtonText}>
                       {isAdded ? '✅ CERTIFIED & CONNECTED' : '⚡ CHOOSE & ONBOARD SUPPLIER'}
                     </Text>

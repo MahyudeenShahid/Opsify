@@ -20,6 +20,30 @@ const URGENCY_CONFIG: Record<string, { color: string; bg: string; label: string;
   MEDIUM: { color: '#FFB800', bg: 'rgba(255,184,0,0.08)', label: 'MEDIUM', emoji: '🟡' },
 };
 
+// ─── Staggered Animated Card ──────────────────────────────────────────────────
+const AnimatedCard = ({ children, index, style }: { children: React.ReactNode; index: number; style?: any }) => {
+  const opacity  = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(24)).current;
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(opacity, {
+        toValue: 1, duration: Theme.animation.duration.normal,
+        delay: index * Theme.animation.duration.stagger,
+        useNativeDriver: true,
+      }),
+      Animated.spring(translateY, {
+        toValue: 0, delay: index * Theme.animation.duration.stagger,
+        ...Theme.animation.spring, useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+  return (
+    <Animated.View style={[{ opacity, transform: [{ translateY }] }, style]}>
+      {children}
+    </Animated.View>
+  );
+};
+
 export const ERPAgentScreen: React.FC = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [expandedItem, setExpandedItem] = useState<number | null>(null);
@@ -254,18 +278,26 @@ export const ERPAgentScreen: React.FC = () => {
       {/* Section Toggle Pills */}
       <View style={styles.sectionToggle}>
         {([
-          { id: 'alerts', label: '🚨 Alerts', count: suggestions.length },
-          { id: 'profit', label: '💰 Profit', count: null },
-          { id: 'suppliers', label: '🤝 Suppliers', count: suppliers.length },
-          { id: 'warehouses', label: '🏢 Warehouses', count: warehouses.length },
-        ] as const).map(s => (
+          { id: 'alerts' as const,     label: 'Alerts',     count: suggestions.length, icon: '⚡' },
+          { id: 'profit' as const,     label: 'Profit',     count: null,               icon: '💰' },
+          { id: 'suppliers' as const,  label: 'Suppliers',  count: suppliers.length,   icon: '🤝' },
+          { id: 'warehouses' as const, label: 'Warehouses', count: warehouses.length,  icon: '🏢' },
+        ]).map(s => (
           <TouchableOpacity
             key={s.id}
             style={[styles.toggleBtn, activeSection === s.id && styles.toggleBtnActive]}
             onPress={() => setActiveSection(s.id)}
+            activeOpacity={0.75}
           >
+            {activeSection === s.id && (
+              <LinearGradient
+                colors={['rgba(0,230,118,0.2)', 'rgba(0,176,255,0.12)']}
+                style={StyleSheet.absoluteFill}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              />
+            )}
             <Text style={[styles.toggleText, activeSection === s.id && styles.toggleTextActive]} numberOfLines={1}>
-              {s.label}{s.count !== null ? ` (${s.count})` : ''}
+              {s.icon} {s.label}{s.count !== null && s.count > 0 ? ` · ${s.count}` : ''}
             </Text>
           </TouchableOpacity>
         ))}
@@ -303,14 +335,15 @@ export const ERPAgentScreen: React.FC = () => {
                   />
                 </View>
 
-                {suggestions.map((item) => {
+                {suggestions.map((item, alertIdx) => {
                   const cfg = URGENCY_CONFIG[item.urgency] || URGENCY_CONFIG.MEDIUM;
                   const isExpanded = expandedItem === item.product_id;
                   const results = searchResults[item.product_id] || [];
                   const isSearching = searchingFor === item.product_id;
 
                   return (
-                    <View key={item.product_id} style={[styles.alertCard, { borderColor: `${cfg.color}50` }]}>
+                    <AnimatedCard key={item.product_id} index={alertIdx}>
+                    <View style={[styles.alertCard, { borderColor: `${cfg.color}50` }]}>
                       <LinearGradient pointerEvents="none" colors={['#1F2937', '#111827']} style={StyleSheet.absoluteFill} />
 
                       {/* Alert Header */}
@@ -414,6 +447,7 @@ export const ERPAgentScreen: React.FC = () => {
                         </View>
                       )}
                     </View>
+                    </AnimatedCard>
                   );
                 })}
               </>
