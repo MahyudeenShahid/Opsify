@@ -123,10 +123,10 @@ export const SupplierManager: React.FC = () => {
       setShowAddForm(false);
       fetchSuppliers();
       const sMsg = 'The distributor has been successfully cataloged.';
-      if (Platform.OS === 'web') window.alert('Supplier Onboarded: ' + sMsg);
+      if (Platform.OS === 'web') (window as any).alert('Supplier Onboarded: ' + sMsg);
       else Alert.alert('Supplier Onboarded', sMsg);
     } catch (e: any) {
-      if (Platform.OS === 'web') window.alert('Registry Error: ' + e.message);
+      if (Platform.OS === 'web') (window as any).alert('Registry Error: ' + e.message);
       else Alert.alert('Registry Error', e.message);
     }
   };
@@ -232,10 +232,10 @@ export const SupplierManager: React.FC = () => {
                   onPress={() => {
                     const msg = `This will permanently delete all ${suppliers.length} suppliers. Continue?`;
                     if (Platform.OS === 'web') {
-                      if (window.confirm(msg)) {
+                      if ((window as any).confirm(msg)) {
                         ApiService.deleteAllSuppliers()
-                          .then(() => { fetchSuppliers(); window.alert('Done: All suppliers removed.'); })
-                          .catch(e => window.alert('Error: ' + e.message));
+                          .then(() => { fetchSuppliers(); (window as any).alert('Done: All suppliers removed.'); })
+                          .catch((e: any) => (window as any).alert('Error: ' + e.message));
                       }
                       return;
                     }
@@ -315,10 +315,10 @@ export const SupplierManager: React.FC = () => {
                       onPress={() => {
                         const msg = `Remove "${sup.name}" from the network?`;
                         if (Platform.OS === 'web') {
-                          if (window.confirm(msg)) {
+                          if ((window as any).confirm(msg)) {
                             ApiService.deleteSupplier(sup.id)
                               .then(() => fetchSuppliers())
-                              .catch(e => window.alert('Error: ' + e.message));
+                              .catch((e: any) => (window as any).alert('Error: ' + e.message));
                           }
                           return;
                         }
@@ -524,6 +524,15 @@ export const SupplierManager: React.FC = () => {
 
 const styles = StyleSheet.create({
   scrollContainer: { paddingBottom: Theme.spacing.xl, paddingHorizontal: Theme.spacing.sm },
+  input: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    color: '#FFF',
+    borderRadius: Theme.borderRadius.md,
+    padding: Theme.spacing.md,
+    marginBottom: Theme.spacing.md,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+  },
   tabContainer: { flexDirection: 'row', backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: Theme.borderRadius.pill, padding: 4, marginBottom: Theme.spacing.md, borderWidth: 1.5, borderColor: 'rgba(255, 255, 255, 0.1)' },
   tabButton: { flex: 1, height: 44, borderRadius: Theme.borderRadius.pill, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
   tabButtonText: { color: Theme.colors.textMuted, fontWeight: '700', fontSize: 13, textTransform: 'uppercase', letterSpacing: 0.5 },

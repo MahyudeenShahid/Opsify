@@ -43,7 +43,7 @@ export const OrderManager: React.FC<Props> = ({ orders, inventory, warehouses, o
     
     if (missing.length > 0) {
       const msg = 'Missing fields: ' + missing.join(', ');
-      if (Platform.OS === 'web') window.alert(msg);
+      if (Platform.OS === 'web') (window as any).alert(msg);
       else Alert.alert('Incomplete', msg);
       return;
     }
@@ -64,10 +64,10 @@ export const OrderManager: React.FC<Props> = ({ orders, inventory, warehouses, o
       setUnitPrice('');
       setShowForm(false);
       onRefresh();
-      if (Platform.OS === 'web') window.alert('✅ Order Created: Order has been placed successfully.');
+      if (Platform.OS === 'web') (window as any).alert('✅ Order Created: Order has been placed successfully.');
       else Alert.alert('✅ Order Created', 'Order has been placed successfully.');
     } catch (e: any) {
-      if (Platform.OS === 'web') window.alert('Error: ' + e.message);
+      if (Platform.OS === 'web') (window as any).alert('Error: ' + e.message);
       else Alert.alert('Error', e.message);
     } finally {
       setIsSubmitting(false);
@@ -94,11 +94,11 @@ export const OrderManager: React.FC<Props> = ({ orders, inventory, warehouses, o
     const msg = `Delete order "${ref}"?`;
     
     if (Platform.OS === 'web') {
-      if (window.confirm(msg)) {
+      if ((window as any).confirm(msg)) {
         try {
           await ApiService.deleteOrder(orderId);
           onRefresh();
-        } catch (e: any) { Alert.alert('Error', e.message); }
+        } catch (e: any) { (window as any).alert('Error: ' + e.message); }
       }
       return;
     }

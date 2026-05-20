@@ -21,6 +21,7 @@ import { auth } from './src/config/firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
 import { FirebaseChatService } from './src/services/firebaseChatService';
 import { ApiService } from './src/services/api';
+import { NotificationService } from './src/services/NotificationService';
 
 type Tab = 'customer' | 'inventory' | 'omnichat' | 'logistics' | 'opsbot' | 'erpagent';
 
@@ -87,6 +88,16 @@ export default function App() {
           if (!onboarded) setNeedsOnboarding(true);
         } catch {
           // If backend unreachable, skip onboarding check
+        }
+        
+        // Push Notifications Registration
+        try {
+          const token = await NotificationService.registerForPushNotificationsAsync();
+          if (token) {
+            await ApiService.updatePushToken(token);
+          }
+        } catch (err) {
+          console.warn('Push registration failed:', err);
         }
       }
     });

@@ -44,6 +44,13 @@ def _col(user_id: str, collection: str):
     """Shorthand for users/{uid}/{collection}."""
     return _user_ref(user_id).collection(collection)
 
+def save_push_token(user_id: str, token: str):
+    _user_ref(user_id).set({"expo_push_token": token}, merge=True)
+
+def get_push_token(user_id: str) -> Optional[str]:
+    doc = _user_ref(user_id).get()
+    return doc.to_dict().get("expo_push_token") if doc.exists else None
+
 
 def _numeric_doc_id(doc_id: Any) -> int:
     try:

@@ -423,7 +423,7 @@ export const ApiService = {
   },
 
   // ─── Supplier CRUD ────────────────────────────────────────────────────────
-  async updateSupplier(id: number, data: any): Promise<any> {
+  async updateSupplier(id: string | number, data: any): Promise<any> {
     const response = await fetch(`${BASE_URL}/suppliers/${id}`, {
       method: 'PUT',
       headers: authHeaders(),
@@ -436,7 +436,7 @@ export const ApiService = {
     return response.json();
   },
 
-  async deleteSupplier(id: number): Promise<any> {
+  async deleteSupplier(id: string | number): Promise<any> {
     const response = await fetch(`${BASE_URL}/suppliers/${id}`, {
       method: 'DELETE',
       headers: authHeaders(),
@@ -506,16 +506,35 @@ export const ApiService = {
   },
 
   // ─── Analytics ────────────────────────────────────────────────────────────
-  async getProfitSummary(): Promise<any> {
-    const response = await fetch(`${BASE_URL}/analytics/profit`, { headers: authHeaders() });
-    if (!response.ok) throw new Error('Failed to fetch profit summary');
+  async updatePushToken(token: string): Promise<any> {
+    const response = await fetch(`${BASE_URL}/users/push-token`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ token }),
+    });
+    if (!response.ok) throw new Error('Failed to update push token');
     return response.json();
   },
 
-  // ─── Activity Log ─────────────────────────────────────────────────────────
+  async testPushNotification(): Promise<any> {
+    const response = await fetch(`${BASE_URL}/users/test-push`, {
+      method: 'POST',
+      headers: authHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to trigger test push');
+    return response.json();
+  },
+
+  // ─── Metrics & Dashboard ─────────────────────────────────────────────────────────
   async getActivityLog(limit = 100): Promise<any[]> {
     const response = await fetch(`${BASE_URL}/activity-log?limit=${limit}`, { headers: authHeaders() });
     if (!response.ok) throw new Error('Failed to fetch activity log');
+    return response.json();
+  },
+
+  async getProfitSummary(): Promise<any> {
+    const response = await fetch(`${BASE_URL}/analytics/profit`, { headers: authHeaders() });
+    if (!response.ok) throw new Error('Failed to fetch profit summary');
     return response.json();
   },
 

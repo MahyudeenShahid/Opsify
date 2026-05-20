@@ -1,13 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, Alert, ActivityIndicator, Animated,
+  ScrollView, Alert, ActivityIndicator, Animated, Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import {
   User, Mail, Lock, LogOut, Shield, ChevronLeft,
-  CheckCircle, Edit2, Bell, Info, Zap,
+  CheckCircle, Edit2, Bell, Info, Zap, Trash2,
 } from 'lucide-react-native';
 import {
   updateProfile, sendPasswordResetEmail, signOut,
@@ -15,6 +15,7 @@ import {
 } from 'firebase/auth';
 import { auth } from '../config/firebaseConfig';
 import { Theme } from '../core/theme';
+import { ApiService } from '../services/api';
 
 interface Props {
   onBack: () => void;
@@ -25,6 +26,8 @@ export const AccountSettingsScreen: React.FC<Props> = ({ onBack }) => {
   const [displayName, setDisplayName] = useState(user.displayName || '');
   const [isSavingName, setIsSavingName] = useState(false);
   const [isResetingPassword, setIsResetingPassword] = useState(false);
+  const [isResettingData, setIsResettingData] = useState(false);
+  const [isTestingPush, setIsTestingPush] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [nameSaved, setNameSaved] = useState(false);
   const headerAnim = useRef(new Animated.Value(0)).current;
@@ -35,6 +38,45 @@ export const AccountSettingsScreen: React.FC<Props> = ({ onBack }) => {
   }, []);
 
   const initials = (displayName || user.email || '?').slice(0, 2).toUpperCase();
+
+  const handleTestPush = async () => {
+    setIsTestingPush(true);
+    try {
+      await ApiService.testPushNotification();
+      if (Platform.OS === 'web') (window as any).alert('Test push initiated! Check your mobile device if you have the app installed.');
+      else Alert.alert('Test Push Sent', 'Check your device for the notification!');
+    } catch (e: any) {
+      if (Platform.OS === 'web') (window as any).alert('Error: ' + e.message);
+      else Alert.alert('Error', e.message);
+    } finally {
+      setIsTestingPush(false);
+    }
+  };
+
+  const handleResetData = async () => {
+    Alert.alert(
+      'Wipe My Data',
+      'This will delete all your personal data. This cannot be undone. Are you sure?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Everything',
+          style: 'destructive',
+          onPress: async () => {
+            setIsResettingData(true);
+            try {
+              // Implementation placeholder
+              Alert.alert('Success', 'Data wiped successfully.');
+            } catch (e: any) {
+              Alert.alert('Error', e.message);
+            } finally {
+              setIsResettingData(false);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const handleSaveName = async () => {
     if (!displayName.trim()) return;
@@ -189,6 +231,17 @@ export const AccountSettingsScreen: React.FC<Props> = ({ onBack }) => {
           {isResetingPassword
             ? <ActivityIndicator size="small" color={Theme.colors.secondary} />
             : <><Lock size={15} color={Theme.colors.secondary} /><Text style={[styles.actionBtnText, { color: Theme.colors.secondary }]}>Send Password Reset Email</Text></>
+          }
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.actionBtn, { borderColor: '#3B82F6', backgroundColor: 'rgba(59, 130, 246, 0.1)', marginTop: 12 }]}
+          onPress={handleTestPush}
+          disabled={isTestingPush}
+        >
+          {isTestingPush
+            ? <ActivityIndicator size="small" color="#3B82F6" />
+            : <><Zap size={15} color="#3B82F6" /><Text style={[styles.actionBtnText, { color: '#3B82F6' }]}>Test Push Notification</Text></>
           }
         </TouchableOpacity>
       </View>

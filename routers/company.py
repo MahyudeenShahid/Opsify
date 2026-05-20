@@ -9,7 +9,7 @@ import random
 import uuid
 from typing import Optional, List, Union, Any
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, BackgroundTasks
 
 from broker.event_broker import broker
 from company_brain.firestore_inventory import (
@@ -31,7 +31,9 @@ from company_brain.firestore_inventory import (
     # Activity
     get_activity_log,
     DEFAULT_USER_ID,
+    save_push_token,
 )
+from company_brain.notifications import send_push_notification
 
 router = APIRouter()
 
@@ -100,10 +102,14 @@ class OrderStatusRequest(BaseModel):
 class WarehouseRequest(BaseModel):
     name: str
     location: str
+    capacity: Optional[float] = 0.0
 
 class UpdateWarehouseRequest(BaseModel):
     name: Optional[str] = None
     location: Optional[str] = None
+
+class PushTokenRequest(BaseModel):
+    token: str
 
 class DispatchRequest(BaseModel):
     courier_name: str
@@ -180,25 +186,27 @@ def api_get_suppliers(x_user_id: Optional[str] = Header(None)):
     return get_suppliers(_uid(x_user_id))
 
 
-@router.post("/api/suppliers/add")
-def api_add_supplier(req: SupplierRequest, x_user_id: Optional[str] = Header(None)):
-    res = add_supplier(req.name, req.contact, req.rating, req.reliability_score,
-                       req.lead_time_days, _uid(x_user_id))
-    if res["status"] == "error":
-        raise HTTPException(status_code=400, detail=res["message"])
-    return res
+@router.post("/api/suppliers")
+def api_add_supplier(req: SupplierRequest, background_tasks: BackgroundTasks, x_user_id: Optional[str] = Header(None)):
+    uid = _uid(x_user_id)
+    res = add_supplier(req.name, req.contact, req.rating, req.reliability_score, req.lead_time_days, uid)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res.get("message"))
+    background_tasks.add_task(send_push_notification, uid, "New Supplier Added", f"{req.name} has been added to your network.")
+    return {"message": "Supplier added", "id": res.get("id")}
 
 
 @router.put("/api/suppliers/{supplier_id}")
-def api_update_supplier(supplier_id: str, req: UpdateSupplierRequest,
-                        x_user_id: Optional[str] = Header(None)):
-    res = update_supplier(supplier_id, _uid(x_user_id),
-                          name=req.name, contact=req.contact, rating=req.rating,
-                          reliability_score=req.reliability_score,
-                          lead_time_days=req.lead_time_days)
-    if res["status"] == "error":
-        raise HTTPException(status_code=400, detail=res["message"])
-    return res
+def api_update_supplier(supplier_id: str, req: UpdateSupplierRequest, background_tasks: BackgroundTasks, x_user_id: Optional[str] = Header(None)):
+    uid = _uid(x_user_id)
+    update_data = {k: v for k, v in req.model_dump().items() if v is not None}
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No update data provided")
+    res = update_supplier(supplier_id, uid, **update_data)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=404, detail=res.get("message"))
+    background_tasks.add_task(send_push_notification, uid, "Supplier Updated", f"Details for supplier '{update_data.get('name', 'ID: '+supplier_id)}' were updated.")
+    return {"message": "Supplier updated"}
 
 
 @router.delete("/api/suppliers/all")
@@ -207,11 +215,13 @@ def api_delete_all_suppliers(x_user_id: Optional[str] = Header(None)):
 
 
 @router.delete("/api/suppliers/{supplier_id}")
-def api_delete_supplier(supplier_id: str, x_user_id: Optional[str] = Header(None)):
-    res = delete_supplier(supplier_id, _uid(x_user_id))
-    if res["status"] == "error":
-        raise HTTPException(status_code=404, detail=res["message"])
-    return res
+def api_delete_supplier(supplier_id: str, background_tasks: BackgroundTasks, x_user_id: Optional[str] = Header(None)):
+    uid = _uid(x_user_id)
+    res = delete_supplier(supplier_id, uid)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=404, detail=res.get("message"))
+    background_tasks.add_task(send_push_notification, uid, "Supplier Removed", f"Supplier has been removed from your network.")
+    return {"message": "Supplier deleted"}
 
 
 # ── Products ──────────────────────────────────────────────────────────────────
@@ -366,11 +376,23 @@ def api_get_activity_log(limit: int = 100, x_user_id: Optional[str] = Header(Non
 
 # ── Onboarding ────────────────────────────────────────────────────────────────
 
-@router.get("/api/onboarding/status")
-def api_onboarding_status(x_user_id: Optional[str] = Header(None)):
+@router.get("/api/users/onboarding")
+def api_get_onboarding_status(x_user_id: Optional[str] = Header(None)):
     uid = _uid(x_user_id)
-    return {"onboarded": user_is_onboarded(uid)}
+    onboarded = user_is_onboarded(uid)
+    return {"onboarded": onboarded}
 
+@router.post("/api/users/push-token")
+def api_update_push_token(req: PushTokenRequest, x_user_id: Optional[str] = Header(None)):
+    uid = _uid(x_user_id)
+    save_push_token(uid, req.token)
+    return {"message": "Push token saved"}
+
+@router.post("/api/users/test-push")
+def api_test_push_token(background_tasks: BackgroundTasks, x_user_id: Optional[str] = Header(None)):
+    uid = _uid(x_user_id)
+    background_tasks.add_task(send_push_notification, uid, "Push Notification Test", "Your push notification system is working perfectly!")
+    return {"message": "Test push initiated"}
 
 @router.post("/api/onboarding/seed")
 def api_onboarding_seed(x_user_id: Optional[str] = Header(None)):

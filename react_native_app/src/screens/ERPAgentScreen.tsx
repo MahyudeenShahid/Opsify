@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet, Text, View, TouchableOpacity, ScrollView,
-  ActivityIndicator, Alert, Animated, TextInput
+  ActivityIndicator, Alert, Animated, TextInput, Platform
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import {
   AlertTriangle, Search, MapPin, Plus, Trash2, Zap,
-  TrendingUp, RefreshCw, ChevronDown, ChevronUp, DollarSign
+  TrendingUp, RefreshCw, ChevronDown, ChevronUp, DollarSign,
+  Edit2, CheckCircle
 } from 'lucide-react-native';
 import { Theme } from '../core/theme';
 import { ApiService } from '../services/api';
@@ -31,6 +32,14 @@ export const ERPAgentScreen: React.FC = () => {
   const [addedVendors, setAddedVendors] = useState<Set<string>>(new Set());
   const [scoutLocation, setScoutLocation] = useState('Karachi');
   const [activeSection, setActiveSection] = useState<'alerts' | 'profit' | 'suppliers' | 'warehouses'>('alerts');
+  const [showSupplierForm, setShowSupplierForm] = useState(false);
+  const [supplierName, setSupplierName] = useState('');
+  const [supplierContact, setSupplierContact] = useState('');
+  const [supplierRating, setSupplierRating] = useState('');
+  const [supplierReliability, setSupplierReliability] = useState('');
+  const [supplierLeadTime, setSupplierLeadTime] = useState('');
+  const [editingSupplierId, setEditingSupplierId] = useState<string | null>(null);
+  const [isSubmittingSupplier, setIsSubmittingSupplier] = useState(false);
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const headerAnim = useRef(new Animated.Value(0)).current;
@@ -107,9 +116,18 @@ export const ERPAgentScreen: React.FC = () => {
   };
 
   const handleDeleteSupplier = (sup: any) => {
+    const msg = `Remove "${sup.name}" from your network?`;
+    if (Platform.OS === 'web') {
+      if ((window as any).confirm(msg)) {
+        ApiService.deleteSupplier(sup.id)
+          .then(() => setSuppliers(prev => prev.filter(s => s.id !== sup.id)))
+          .catch(e => (window as any).alert('Error: ' + e.message));
+      }
+      return;
+    }
     Alert.alert(
       'Remove Supplier',
-      `Remove "${sup.name}" from your network?`,
+      msg,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -128,9 +146,18 @@ export const ERPAgentScreen: React.FC = () => {
   };
 
   const handleDeleteAllSuppliers = () => {
+    const msg = `This will remove all ${suppliers.length} suppliers. This cannot be undone.`;
+    if (Platform.OS === 'web') {
+      if ((window as any).confirm(msg)) {
+        ApiService.deleteAllSuppliers()
+          .then(() => setSuppliers([]))
+          .catch(e => (window as any).alert('Error: ' + e.message));
+      }
+      return;
+    }
     Alert.alert(
       'Delete All Suppliers',
-      `This will remove all ${suppliers.length} suppliers. This cannot be undone.`,
+      msg,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -146,6 +173,65 @@ export const ERPAgentScreen: React.FC = () => {
         },
       ]
     );
+  };
+
+  const handleSaveSupplier = async () => {
+    let missing = [];
+    if (!supplierName) missing.push("Company Name");
+    if (!supplierContact) missing.push("Contact Info");
+    if (!supplierRating) missing.push("Rating");
+    if (!supplierReliability) missing.push("Reliability");
+    if (!supplierLeadTime) missing.push("Lead Time");
+
+    if (missing.length > 0) {
+      const msg = 'Missing fields: ' + missing.join(', ');
+      if (Platform.OS === 'web') (window as any).alert(msg);
+      else Alert.alert('Incomplete Form', msg);
+      return;
+    }
+
+    setIsSubmittingSupplier(true);
+    try {
+      const data = {
+        name: supplierName,
+        contact: supplierContact,
+        rating: parseFloat(supplierRating),
+        reliability_score: parseFloat(supplierReliability),
+        lead_time_days: parseInt(supplierLeadTime),
+      };
+
+      if (editingSupplierId) {
+        await ApiService.updateSupplier(editingSupplierId, data);
+        if (Platform.OS === 'web') (window as any).alert('Supplier updated successfully.');
+        else Alert.alert('Success', 'Supplier updated successfully.');
+      } else {
+        await ApiService.addSupplier(data);
+        if (Platform.OS === 'web') (window as any).alert('Supplier added successfully.');
+        else Alert.alert('Success', 'Supplier added successfully.');
+      }
+      
+      setSupplierName(''); setSupplierContact(''); setSupplierRating(''); setSupplierReliability(''); setSupplierLeadTime('');
+      setEditingSupplierId(null);
+      setShowSupplierForm(false);
+      
+      const sups = await ApiService.getSuppliers();
+      setSuppliers(sups);
+    } catch (e: any) {
+      if (Platform.OS === 'web') (window as any).alert('Error: ' + e.message);
+      else Alert.alert('Error', e.message);
+    } finally {
+      setIsSubmittingSupplier(false);
+    }
+  };
+
+  const handleEditSupplierPress = (sup: any) => {
+    setSupplierName(sup.name || '');
+    setSupplierContact(sup.contact || '');
+    setSupplierRating(sup.rating?.toString() || '');
+    setSupplierReliability(sup.reliability_score?.toString() || '');
+    setSupplierLeadTime(sup.lead_time_days?.toString() || '');
+    setEditingSupplierId(sup.id);
+    setShowSupplierForm(true);
   };
 
   const fmt = (n: number) => {
@@ -235,7 +321,7 @@ export const ERPAgentScreen: React.FC = () => {
 
                   return (
                     <View key={item.product_id} style={[styles.alertCard, { borderColor: `${cfg.color}50` }]}>
-                      <LinearGradient colors={[cfg.bg, 'rgba(17,22,34,0.95)']} style={StyleSheet.absoluteFill} />
+                      <LinearGradient pointerEvents="none" colors={['#1F2937', '#111827']} style={StyleSheet.absoluteFill} />
 
                       {/* Alert Header */}
                       <View style={styles.alertTop}>
@@ -426,9 +512,154 @@ export const ERPAgentScreen: React.FC = () => {
               </View>
             )}
 
+            {/* Add/Edit Manual Form Toggle */}
+            <TouchableOpacity style={{ height: 48, borderRadius: Theme.borderRadius.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: Theme.spacing.md, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }} onPress={() => { setEditingSupplierId(null); setShowSupplierForm(!showSupplierForm); }}>
+              <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '800' }}>
+                {showSupplierForm ? 'Cancel Manual Entry' : '+ Add Supplier Manually'}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Premium Manual Entry Form */}
+            {showSupplierForm && (
+              <View style={{ marginBottom: Theme.spacing.lg }}>
+                {/* Outer Glow / Border Wrap */}
+                <View style={{ 
+                  borderRadius: 20, 
+                  padding: 2, 
+                  backgroundColor: 'rgba(255,255,255,0.05)',
+                  shadowColor: '#00FFA3',
+                  shadowOffset: { width: 0, height: 10 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 20,
+                  elevation: 10,
+                }}>
+                  <LinearGradient pointerEvents="none" colors={['rgba(0, 255, 163, 0.3)', 'rgba(0, 176, 255, 0.1)', 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[StyleSheet.absoluteFill, { borderRadius: 20 }]} />
+                  
+                  {/* Inner Form Card */}
+                  <View style={{ 
+                    backgroundColor: 'rgba(17, 22, 34, 0.95)', 
+                    borderRadius: 18, 
+                    padding: 24,
+                    overflow: 'hidden',
+                  }}>
+                    <LinearGradient pointerEvents="none" colors={['rgba(255,255,255,0.03)', 'transparent']} style={StyleSheet.absoluteFill} />
+                    
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                        <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(0, 255, 163, 0.1)', justifyContent: 'center', alignItems: 'center' }}>
+                          {editingSupplierId ? <Edit2 size={16} color="#00FFA3" /> : <Plus size={16} color="#00FFA3" />}
+                        </View>
+                        <Text style={{ color: '#FFF', fontSize: 18, fontWeight: '800', letterSpacing: 0.5 }}>
+                          {editingSupplierId ? 'Update Supplier' : 'New Supplier'}
+                        </Text>
+                      </View>
+                      <TouchableOpacity onPress={() => setShowSupplierForm(false)} style={{ padding: 4 }}>
+                        <Text style={{ color: Theme.colors.textMuted, fontSize: 20, fontWeight: '300' }}>×</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* Form Fields */}
+                    <View style={{ gap: 16 }}>
+                      <View>
+                        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: '700', letterSpacing: 1, marginBottom: 8, marginLeft: 4 }}>COMPANY PROFILE</Text>
+                        <View style={{ backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 16, height: 50, justifyContent: 'center' }}>
+                          <TextInput 
+                            style={{ color: '#FFF', fontSize: 15, fontWeight: '500' }} 
+                            placeholder="Supplier Name (e.g. Acme Corp)" 
+                            placeholderTextColor="rgba(255,255,255,0.2)" 
+                            value={supplierName} 
+                            onChangeText={setSupplierName} 
+                          />
+                        </View>
+                      </View>
+
+                      <View>
+                        <View style={{ backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 16, height: 50, justifyContent: 'center' }}>
+                          <TextInput 
+                            style={{ color: '#FFF', fontSize: 15, fontWeight: '500' }} 
+                            placeholder="Contact Number or Email" 
+                            placeholderTextColor="rgba(255,255,255,0.2)" 
+                            value={supplierContact} 
+                            onChangeText={setSupplierContact} 
+                          />
+                        </View>
+                      </View>
+
+                      <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: '700', letterSpacing: 1, marginTop: 8, marginLeft: 4 }}>PERFORMANCE METRICS</Text>
+                      
+                      <View style={{ flexDirection: 'row', gap: 12 }}>
+                        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 16, height: 50, justifyContent: 'center' }}>
+                          <TextInput 
+                            style={{ color: '#FFF', fontSize: 15, fontWeight: '500' }} 
+                            placeholder="Rating (1-5)" 
+                            placeholderTextColor="rgba(255,255,255,0.2)" 
+                            keyboardType="numeric" 
+                            value={supplierRating} 
+                            onChangeText={setSupplierRating} 
+                          />
+                        </View>
+                        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 16, height: 50, justifyContent: 'center' }}>
+                          <TextInput 
+                            style={{ color: '#FFF', fontSize: 15, fontWeight: '500' }} 
+                            placeholder="Reliability %" 
+                            placeholderTextColor="rgba(255,255,255,0.2)" 
+                            keyboardType="numeric" 
+                            value={supplierReliability} 
+                            onChangeText={setSupplierReliability} 
+                          />
+                        </View>
+                      </View>
+
+                      <View style={{ backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 16, height: 50, justifyContent: 'center' }}>
+                        <TextInput 
+                          style={{ color: '#FFF', fontSize: 15, fontWeight: '500' }} 
+                          placeholder="Lead Time (e.g. 3 Days)" 
+                          placeholderTextColor="rgba(255,255,255,0.2)" 
+                          keyboardType="numeric" 
+                          value={supplierLeadTime} 
+                          onChangeText={setSupplierLeadTime} 
+                        />
+                      </View>
+                    </View>
+
+                    {/* Submit Button */}
+                    <TouchableOpacity 
+                      style={{ 
+                        height: 54, 
+                        borderRadius: 14, 
+                        marginTop: 28, 
+                        overflow: 'hidden',
+                        justifyContent: 'center', 
+                        alignItems: 'center',
+                        shadowColor: '#00FFA3',
+                        shadowOffset: { width: 0, height: 4 },
+                        shadowOpacity: 0.3,
+                        shadowRadius: 8,
+                        elevation: 5,
+                      }} 
+                      onPress={handleSaveSupplier} 
+                      disabled={isSubmittingSupplier}
+                    >
+                      <LinearGradient pointerEvents="none" colors={['#00FFA3', '#00E676']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
+                      {isSubmittingSupplier ? (
+                        <ActivityIndicator size="small" color="#000" />
+                      ) : (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          {editingSupplierId ? <CheckCircle size={18} color="#000" /> : <Plus size={18} color="#000" />}
+                          <Text style={{ color: '#000', fontSize: 16, fontWeight: '900', letterSpacing: 0.5 }}>
+                            {editingSupplierId ? 'SAVE CHANGES' : 'ADD SUPPLIER'}
+                          </Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            )}
+
             {suppliers.map((sup) => (
               <View key={sup.id} style={styles.supplierCard}>
-                <LinearGradient colors={['rgba(26,34,52,0.9)', 'rgba(17,22,34,0.9)']} style={StyleSheet.absoluteFill} />
+                <LinearGradient pointerEvents="none" colors={['rgba(26,34,52,0.9)', 'rgba(17,22,34,0.9)']} style={StyleSheet.absoluteFill} />
                 <View style={styles.supplierCardTop}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.supplierName}>{sup.name}</Text>
@@ -438,6 +669,9 @@ export const ERPAgentScreen: React.FC = () => {
                     <View style={styles.ratingPill}>
                       <Text style={styles.ratingPillText}>⭐ {sup.rating?.toFixed(1)}</Text>
                     </View>
+                    <TouchableOpacity style={styles.deleteSupBtn} onPress={() => handleEditSupplierPress(sup)}>
+                      <Text style={{ fontSize: 12 }}>✏️</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity style={styles.deleteSupBtn} onPress={() => handleDeleteSupplier(sup)}>
                       <Trash2 size={14} color={Theme.colors.error} />
                     </TouchableOpacity>
@@ -482,7 +716,7 @@ export const ERPAgentScreen: React.FC = () => {
               
               return (
                 <View key={wh.id} style={styles.supplierCard}>
-                  <LinearGradient colors={['rgba(33,150,243,0.08)', 'rgba(17,22,34,0.95)']} style={StyleSheet.absoluteFill} />
+                <LinearGradient pointerEvents="none" colors={['rgba(26,34,52,0.9)', 'rgba(17,22,34,0.9)']} style={StyleSheet.absoluteFill} />
                   
                   <View style={styles.supplierCardTop}>
                     <View style={{ flex: 1 }}>
