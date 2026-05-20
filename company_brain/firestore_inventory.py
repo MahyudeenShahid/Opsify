@@ -147,14 +147,20 @@ def seed_user_data(user_id: str):
         {"id": 2, "sku": "WR-001",  "name": "Wire",  "category": "Hardware", "variant": "10 Gauge Copper", "unit": "Meters", "cost_price":  30.0, "selling_price":  45.0, "supplier_id": 2},
         {"id": 3, "sku": "PP-001",  "name": "Pipe",  "category": "Hardware", "variant": "PVC 2 inch",       "unit": "Pieces", "cost_price":  80.0, "selling_price": 120.0, "supplier_id": 2},
         {"id": 4, "sku": "BKR-001", "name": "Bread", "category": "Bakery",   "variant": "Whole Wheat",      "unit": "Loaves", "cost_price":  40.0, "selling_price":  60.0, "supplier_id": 1},
+        # ⚠️ DEMO ALERT: Sugar is critically low — triggers Low Stock & Reorder features immediately
+        {"id": 5, "sku": "SGR-001", "name": "Sugar", "category": "Grocery",  "variant": "Refined White",    "unit": "KG",     "cost_price":  55.0, "selling_price":  80.0, "supplier_id": 3},
     ]
     stock_records = [
         {"product_id": 1, "warehouse_id": 1, "stock": 25.0,  "reorder_threshold": 5.0},
         {"product_id": 1, "warehouse_id": 2, "stock": 10.0,  "reorder_threshold": 5.0},
         {"product_id": 2, "warehouse_id": 1, "stock": 100.0, "reorder_threshold": 15.0},
         {"product_id": 3, "warehouse_id": 2, "stock": 50.0,  "reorder_threshold": 10.0},
-        {"product_id": 4, "warehouse_id": 1, "stock": 15.0,  "reorder_threshold": 20.0},
+        # Bread: stock (8) < threshold (20) → triggers reorder alert ✅
+        {"product_id": 4, "warehouse_id": 1, "stock": 8.0,   "reorder_threshold": 20.0},
+        # Sugar: stock (2) << threshold (30) → CRITICAL alert ✅
+        {"product_id": 5, "warehouse_id": 1, "stock": 2.0,   "reorder_threshold": 30.0},
     ]
+
     transactions = [
         {"product_id": 1, "warehouse_id": 1, "type": "SALE",    "reason": None, "quantity": 30.0, "total_value": 4500.0, "timestamp": (now - timedelta(days=30)).isoformat()},
         {"product_id": 4, "warehouse_id": 1, "type": "SALE",    "reason": None, "quantity": 45.0, "total_value": 2700.0, "timestamp": (now - timedelta(days=30)).isoformat()},

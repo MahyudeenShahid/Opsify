@@ -7,6 +7,11 @@ from fastapi import APIRouter, HTTPException, Header
 
 from orchestrator.graph import AntigravityGraph
 from tools.database import get_all_providers, query_mock_provider_db as _search_providers
+from company_brain.firestore_inventory import (
+    add_order as db_add_order,
+    record_sale,
+    get_products,
+)
 from agents.chat_scan_agent import (
     scan_chats_for_incomplete_orders,
     deep_scan_chats,
@@ -98,7 +103,8 @@ class RejectOrderRequest(BaseModel):
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
 @router.post("/api/orchestrate", response_model=OrderResponse)
-async def orchestrate_order(req: OrderRequest):
+async def orchestrate_order(req: OrderRequest, x_user_id: Optional[str] = Header(None)):
+    user_id = _uid(x_user_id)
     try:
         final_state = customer_graph.run(req.message)
         
@@ -118,7 +124,45 @@ async def orchestrate_order(req: OrderRequest):
                 # ── Smart warehouse routing: pick nearest depot to customer zone
                 warehouse_id = _resolve_warehouse(intent.get("location", "Unknown"))
 
-                # Emit to Event Broker to let System 2 handle the ledger/bidding!
+                # ── Directly write the Order record to Firestore ──────────────
+                try:
+                    # Find matching product to get product_id
+                    product_id = 1  # fallback
+                    unit_price = price / qty if qty > 0 else price
+                    products = get_products(user_id)
+                    norm_cat = cat.lower().strip()
+                    matched = next(
+                        (p for p in products if p.get("name", "").lower().strip() == norm_cat),
+                        None
+                    )
+                    if matched:
+                        product_id = matched["id"]
+                        unit_price = float(matched.get("selling_price", price / qty if qty > 0 else price))
+                        price = unit_price * qty
+                        # Also record the stock deduction as a sale transaction
+                        record_sale(product_id, matched.get("warehouse_id", warehouse_id), qty, price, user_id)
+
+                    order_ref = f"CMD-{cat.upper()}-{int(asyncio.get_event_loop().time())}"
+                    db_add_order(
+                        order_ref=order_ref,
+                        customer_name=intent.get("contact_name") or "Manual Command",
+                        product_id=product_id,
+                        warehouse_id=warehouse_id,
+                        quantity=qty,
+                        unit_price=unit_price,
+                        total_value=price,
+                        status="PENDING",
+                        user_id=user_id,
+                    )
+                    final_state["agent_trace_logs"].append(
+                        f"[S1] ✅ Order written to ERP ledger: {qty} × {cat} @ {price:.0f} (ref: {order_ref})"
+                    )
+                except Exception as write_err:
+                    final_state["agent_trace_logs"].append(
+                        f"[S1] ⚠️ Order logged but DB write failed: {write_err}"
+                    )
+
+                # ── Emit event to broker for System 2 awareness ───────────────
                 event = EventPayload(
                     event_type="CUSTOMER_ORDER_BOOKED",
                     payload={
@@ -134,13 +178,11 @@ async def orchestrate_order(req: OrderRequest):
                     }
                 )
                 
-                # Publish event to broker directly
                 from broker.event_broker import broker
                 from company_brain.graph import CompanyBrainGraph
                 
                 await broker.publish(event.event_type, "External", event.payload)
                 
-                # Run the Company Brain graph autonomously
                 company_graph = CompanyBrainGraph()
                 try:
                     payload_str = event.model_dump_json()
@@ -156,6 +198,7 @@ async def orchestrate_order(req: OrderRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @router.post("/api/voice/transcribe")

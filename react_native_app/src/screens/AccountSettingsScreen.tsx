@@ -7,7 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import {
   User, Mail, Lock, LogOut, Shield, ChevronLeft,
-  CheckCircle, Edit2, Bell, Info, Zap, Trash2,
+  CheckCircle, Edit2, Bell, Info, Zap, Trash2, Database,
 } from 'lucide-react-native';
 import {
   updateProfile, sendPasswordResetEmail, signOut,
@@ -27,6 +27,7 @@ export const AccountSettingsScreen: React.FC<Props> = ({ onBack }) => {
   const [isSavingName, setIsSavingName] = useState(false);
   const [isResetingPassword, setIsResetingPassword] = useState(false);
   const [isResettingData, setIsResettingData] = useState(false);
+  const [isReseedingData, setIsReseedingData] = useState(false);
   const [isTestingPush, setIsTestingPush] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [nameSaved, setNameSaved] = useState(false);
@@ -52,6 +53,38 @@ export const AccountSettingsScreen: React.FC<Props> = ({ onBack }) => {
       setIsTestingPush(false);
     }
   };
+
+  const handleReseedData = async () => {
+    const doReseed = async () => {
+      setIsReseedingData(true);
+      try {
+        await ApiService.reseedUserData();
+        if (Platform.OS === 'web') window.alert('✅ Demo data loaded! Check your ERP Hub — Sugar & Bread are critically low to demo the reorder alerts.');
+        else Alert.alert('✅ Demo Data Loaded', 'Your workspace has been seeded with sample products, suppliers, and low-stock alerts.\n\nCheck ERP Hub → Inventory tab to see the reorder alerts!');
+      } catch (e: any) {
+        if (Platform.OS === 'web') window.alert('Error: ' + e.message);
+        else Alert.alert('Error', e.message);
+      } finally {
+        setIsReseedingData(false);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm('This will reload all sample data (5 products, 4 suppliers, 2 warehouses). Any existing data will be overwritten. Continue?')) {
+        doReseed();
+      }
+    } else {
+      Alert.alert(
+        '🌱 Load Demo Data',
+        'This will seed your workspace with sample products, suppliers, warehouses, and demo transactions — including low-stock alerts to test the reorder features.\n\nExisting data may be overwritten.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Load Demo Data', onPress: doReseed },
+        ]
+      );
+    }
+  };
+
 
   const handleResetData = async () => {
     Alert.alert(
@@ -98,6 +131,22 @@ export const AccountSettingsScreen: React.FC<Props> = ({ onBack }) => {
 
   const handlePasswordReset = async () => {
     if (!user.email) return;
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(`Send a password reset email to ${user.email}?`)) {
+        setIsResetingPassword(true);
+        try {
+          await sendPasswordResetEmail(auth, user.email!);
+          window.alert('✅ Email Sent: Check your inbox for the password reset link.');
+        } catch (e: any) {
+          window.alert('Error: ' + e.message);
+        } finally {
+          setIsResetingPassword(false);
+        }
+      }
+      return;
+    }
+
     Alert.alert(
       'Reset Password',
       `Send a password reset email to ${user.email}?`,
@@ -122,6 +171,17 @@ export const AccountSettingsScreen: React.FC<Props> = ({ onBack }) => {
   };
 
   const handleSignOut = () => {
+    if (Platform.OS === 'web') {
+      if (window.confirm('Are you sure you want to sign out?')) {
+        setIsSigningOut(true);
+        signOut(auth).catch((e: any) => {
+          window.alert('Error: ' + e.message);
+          setIsSigningOut(false);
+        });
+      }
+      return;
+    }
+
     Alert.alert(
       'Sign Out',
       'Are you sure you want to sign out?',
@@ -268,6 +328,31 @@ export const AccountSettingsScreen: React.FC<Props> = ({ onBack }) => {
           <Text style={styles.infoLabel}>User ID</Text>
           <Text style={styles.infoValue} numberOfLines={1}>{user.uid.slice(0, 16)}...</Text>
         </View>
+      </View>
+
+      {/* Demo Data Card */}
+      <View style={styles.card}>
+        <LinearGradient colors={['rgba(26,34,52,0.95)', 'rgba(17,22,34,0.95)']} style={StyleSheet.absoluteFill} />
+        <View style={styles.cardHeader}>
+          <Database size={16} color="#A855F7" />
+          <Text style={styles.cardTitle}>Demo Data</Text>
+        </View>
+        <Text style={[styles.fieldLabel, { marginBottom: 12 }]}>
+          Load sample products, suppliers, and low-stock alerts to explore all ERP features.
+        </Text>
+        <TouchableOpacity
+          style={[styles.actionBtn, { borderColor: '#A855F7', backgroundColor: 'rgba(168,85,247,0.10)', marginTop: 0 }]}
+          onPress={handleReseedData}
+          disabled={isReseedingData}
+        >
+          {isReseedingData
+            ? <ActivityIndicator size="small" color="#A855F7" />
+            : <><Database size={15} color="#A855F7" /><Text style={[styles.actionBtnText, { color: '#A855F7' }]}>Load Demo Data</Text></>
+          }
+        </TouchableOpacity>
+        <Text style={{ color: Theme.colors.textMuted, fontSize: 10, marginTop: 8, lineHeight: 16 }}>
+          ⚠️ Includes Sugar (2 KG stock, threshold 30) and Bread (8 loaves, threshold 20) to trigger reorder alerts immediately.
+        </Text>
       </View>
 
       {/* Sign Out */}

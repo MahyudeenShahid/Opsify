@@ -209,7 +209,11 @@ export default function App() {
         try {
           const { onboarded } = await ApiService.getOnboardingStatus();
           if (!onboarded) setNeedsOnboarding(true);
-        } catch {}
+        } catch (err) {
+          console.warn('[Onboarding] Status check failed, defaulting to show onboarding:', err);
+          // If we can't check, show onboarding so new users always get seeded
+          setNeedsOnboarding(true);
+        }
         try {
           const token = await NotificationService.registerForPushNotificationsAsync();
           if (token) await ApiService.updatePushToken(token);

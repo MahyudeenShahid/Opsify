@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  Animated, ActivityIndicator, Easing,
+  Animated, ActivityIndicator, Easing, ScrollView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -56,7 +56,11 @@ export const OnboardingScreen: React.FC<Props> = ({ onComplete }) => {
       <View style={styles.glow1} />
       <View style={styles.glow2} />
 
-      <Animated.View style={[styles.content, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+      <Animated.ScrollView 
+        style={[styles.scrollContainer, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Logo */}
         <Animated.View style={[styles.logoWrap, { transform: [{ scale: logoAnim }] }]}>
           <LinearGradient colors={Theme.gradients.primary} style={styles.logoGrad}>
@@ -90,7 +94,7 @@ export const OnboardingScreen: React.FC<Props> = ({ onComplete }) => {
                 Pre-loaded with products, suppliers, warehouses, and demo transactions so you can explore every feature immediately.
               </Text>
               <View style={styles.optionFeatures}>
-                {['4 Products', '2 Warehouses', '4 Suppliers', 'Demo Sales'].map(f => (
+                {['5 Products', '2 Warehouses', '4 Suppliers', '⚠️ Low Stock Alert'].map(f => (
                   <View key={f} style={styles.featureChip}>
                     <CheckCircle size={10} color={Theme.colors.primary} />
                     <Text style={styles.featureChipText}>{f}</Text>
@@ -130,17 +134,18 @@ export const OnboardingScreen: React.FC<Props> = ({ onComplete }) => {
         <Text style={styles.footerNote}>
           🔒 Your data is private and stored securely in Firebase under your account only.
         </Text>
-      </Animated.View>
+      </Animated.ScrollView>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  scrollContainer: { flex: 1 },
   glow1: { position: 'absolute', width: 300, height: 300, borderRadius: 150, backgroundColor: 'rgba(0,230,118,0.06)', top: -80, left: -60, },
   glow2: { position: 'absolute', width: 250, height: 250, borderRadius: 125, backgroundColor: 'rgba(0,176,255,0.05)', bottom: 100, right: -60, },
 
-  content: { flex: 1, paddingHorizontal: 24, paddingTop: 80, paddingBottom: 40, alignItems: 'center' },
+  content: { paddingHorizontal: 24, paddingTop: 80, paddingBottom: 40, alignItems: 'center' },
 
   logoWrap: { marginBottom: 24 },
   logoGrad: { width: 80, height: 80, borderRadius: 24, alignItems: 'center', justifyContent: 'center', shadowColor: Theme.colors.primary, shadowRadius: 20, shadowOpacity: 0.4, elevation: 12 },

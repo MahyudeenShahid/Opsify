@@ -44,37 +44,6 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2c — Configure environment variables
-
-```bash
-# Copy the template
-cp .env.example .env
-```
-
-Now open `.env` and fill in your actual values:
-
-```env
-# Required — get from Google AI Studio
-GEMINI_API_KEY=your_gemini_api_key_here
-
-# Required — any strong random string (used to protect the API)
-# Generate with: python -c "import secrets; print(secrets.token_hex(32))"
-OPSIFY_API_KEY=your_strong_api_key_here
-
-# Optional — enables real map routing (falls back to demo mode if missing)
-GOOGLE_MAPS_API_KEY=your_google_maps_key_here
-```
-
-### 2d — Add Firebase credentials
-
-Place your Firebase service account JSON file in the project root as either:
-- `firebase-adminsdk.json`  ← preferred
-- `service_account.json`
-
-> **Where to get it:**  
-> Firebase Console → Project Settings → Service Accounts → Generate new private key
-
-The app will automatically find and use the file. **Never commit this file to git** — it's already in `.gitignore`.
 
 ### 2e — Start the backend
 
@@ -106,15 +75,6 @@ cd react_native_app
 npm install
 ```
 
-### 3b — Configure the API key (optional)
-
-If you set `OPSIFY_API_KEY` in the backend `.env`, the frontend also needs it.
-
-Create `react_native_app/.env`:
-
-```env
-EXPO_PUBLIC_OPSIFY_API_KEY=same_key_you_set_in_backend
-```
 
 ### 3c — Start the app
 

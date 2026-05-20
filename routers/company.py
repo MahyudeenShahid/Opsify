@@ -430,6 +430,14 @@ def api_onboarding_init(x_user_id: Optional[str] = Header(None)):
     return {"status": "success", "message": "Empty workspace created."}
 
 
+@router.post("/api/onboarding/reseed")
+def api_onboarding_reseed(x_user_id: Optional[str] = Header(None)):
+    """Re-seed demo data for an already-onboarded user (e.g. from Settings page)."""
+    uid = _uid(x_user_id)
+    seed_user_data(uid)
+    return {"status": "success", "message": "Demo data reloaded successfully."}
+
+
 # ── Vendor / Supplier Finder ──────────────────────────────────────────────────
 
 @router.get("/api/vendors/search")

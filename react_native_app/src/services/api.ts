@@ -540,7 +540,7 @@ export const ApiService = {
 
   // ─── Onboarding ───────────────────────────────────────────────────────────
   async getOnboardingStatus(): Promise<{ onboarded: boolean }> {
-    const response = await fetch(`${BASE_URL}/onboarding/status`, { headers: authHeaders() });
+    const response = await fetch(`${BASE_URL}/users/onboarding`, { headers: authHeaders() });
     if (!response.ok) throw new Error('Failed to get onboarding status');
     return response.json();
   },
@@ -554,6 +554,13 @@ export const ApiService = {
   async initEmptyUser(): Promise<any> {
     const response = await fetch(`${BASE_URL}/onboarding/init`, { method: 'POST', headers: authHeaders() });
     if (!response.ok) throw new Error('Failed to init workspace');
+    return response.json();
+  },
+
+  // Re-seed data from Settings (works even if already onboarded)
+  async reseedUserData(): Promise<any> {
+    const response = await fetch(`${BASE_URL}/onboarding/reseed`, { method: 'POST', headers: authHeaders() });
+    if (!response.ok) throw new Error('Failed to reseed data');
     return response.json();
   },
 

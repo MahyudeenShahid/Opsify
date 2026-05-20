@@ -1,149 +1,111 @@
 # Opsify — Deployment Guide
 
+This guide covers deploying the backend to Google Cloud Run using the Web Console and building the React Native mobile app using Expo EAS.
+
+---
+
+## Part 1 — Backend: Deploy to Google Cloud Run (Web Console)
+
 > **No Docker needed.** Cloud Run can build directly from your source code using Google Cloud Buildpacks.
 
----
+### Step 1 — Create your Google Cloud Project
 
-## Part 1 — Backend: Deploy to Google Cloud Run (No Docker)
-
-### Prerequisites
-- [Google Cloud CLI (`gcloud`)](https://cloud.google.com/sdk/docs/install) installed
-- A Google Cloud project with billing enabled
-- Your Firebase service account JSON file (`firebase-adminsdk.json` or `service_account.json`)
-
----
-
-### Step 1 — Install & Authenticate gcloud
-
-```bash
-# Install gcloud (Windows — download the installer from the link above)
-# Then authenticate:
-gcloud auth login
-gcloud config set project YOUR_PROJECT_ID
-```
-
-> [!NOTE]
-> Replace `YOUR_PROJECT_ID` with your actual Google Cloud project ID (e.g. `opsify-prod-123`).
-
----
+1. Go to **[console.cloud.google.com](https://console.cloud.google.com)**
+2. Click the project dropdown at the top → **"New Project"**
+3. Name it `opsify-prod` (or similar) → **Create**
+4. Make sure **billing is enabled** (required for Cloud Run)
 
 ### Step 2 — Enable Required APIs
 
+Go to **APIs & Services → Enable APIs and Services** → search and enable:
+- **Cloud Run API**
+- **Cloud Build API**
+- **Secret Manager API**
+- **Artifact Registry API**
+
+### Step 3 — Store Environment Variables (Secrets) in Secret Manager
+
+Instead of bundling sensitive files, store them as secrets in Google Cloud. Cloud Run will inject them as environment variables.
+
+1. Go to **Security → Secret Manager**
+2. Click **"+ Create Secret"** for each of your environment variables:
+
+| Secret Name | Secret Value |
+|---|---|
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | Paste the **entire content** of your `firebase-adminsdk.json` file. |
+| `GEMINI_API_KEY` | Your Gemini API key from AI Studio. |
+| `OPSIFY_API_KEY` | Any strong secret string you choose for your backend API security. |
+| `GOOGLE_MAPS_API_KEY` | Your Google Maps API key (if applicable). |
+
+### Step 4 — Deploy via Cloud Shell (Easiest Method)
+
+Cloud Shell gives you a terminal **inside the browser** — no local `gcloud` installation needed.
+
+1. Click the **Cloud Shell icon** `>_` in the top-right of the Google Cloud console.
+2. In the Cloud Shell terminal, clone your repo:
+   ```bash
+   git clone https://github.com/YOUR_USERNAME/Opsify.git
+   cd Opsify
+   ```
+
+3. Run the deploy command:
+   ```bash
+   gcloud run deploy opsify-backend \
+     --source . \
+     --region asia-south1 \
+     --platform managed \
+     --allow-unauthenticated \
+     --port 8080 \
+     --memory 1Gi \
+     --cpu 1 \
+     --min-instances 0 \
+     --max-instances 5 \
+     --set-secrets="FIREBASE_SERVICE_ACCOUNT_JSON=FIREBASE_SERVICE_ACCOUNT_JSON:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,OPSIFY_API_KEY=OPSIFY_API_KEY:latest"
+   ```
+   *Note: Change `asia-south1` to your preferred region.*
+
+> **What happens here?** 
+> The `--source .` flag tells Cloud Run to build from your source code automatically using Buildpacks — **no Dockerfile needed**. It reads your `Procfile` and `requirements.txt`.
+
+### Step 5 — Grant Secret Access (IAM)
+
+After the first deploy, the Cloud Run service account needs permission to read the secrets.
+
+1. Go to **IAM & Admin → Service Accounts**
+2. Find the default compute service account (looks like `PROJECT_NUMBER-compute@developer.gserviceaccount.com`).
+3. Go back to **Secret Manager** → click each secret → **"Manage access"** (or Permissions) → **Add principal** → paste the service account email → select role: **Secret Manager Secret Accessor** → Save.
+
+Alternatively, in Cloud Shell:
 ```bash
-gcloud services enable run.googleapis.com
-gcloud services enable cloudbuild.googleapis.com
-gcloud services enable secretmanager.googleapis.com
+PROJECT_NUMBER=$(gcloud projects describe $(gcloud config get-value project) --format="value(projectNumber)")
+SA="$PROJECT_NUMBER-compute@developer.gserviceaccount.com"
+
+for SECRET in FIREBASE_SERVICE_ACCOUNT_JSON GEMINI_API_KEY OPSIFY_API_KEY; do
+  gcloud secrets add-iam-policy-binding $SECRET \
+    --member="serviceAccount:$SA" \
+    --role="roles/secretmanager.secretAccessor"
+done
 ```
+Then redeploy the service using the same command from Step 4.
+
+### Step 6 — Get Your Live URL
+
+In **Cloud Run** in the console, click your `opsify-backend` service. Copy the **URL** shown near the top.
+It will look like: `https://opsify-backend-xxxxxx-em.a.run.app`
 
 ---
 
-### Step 3 — Store Secrets in Secret Manager
+## Part 2 — Update the React Native App Environment
 
-Instead of bundling sensitive files, store them as secrets. **This is the recommended way.**
+### Step 1 — Add the Production API URL
 
-#### 3a — Firebase Credentials (most important)
+In your React Native app, update the production API URL to point to your new Cloud Run service.
 
-```bash
-# Convert your service account JSON to a one-liner and store it:
-gcloud secrets create FIREBASE_SERVICE_ACCOUNT_JSON --replication-policy=automatic
+Open `react_native_app/src/services/api.ts` (or wherever your API base URL is defined) and update it:
 
-# On Windows (PowerShell), pipe the file content:
-Get-Content firebase-adminsdk.json -Raw | gcloud secrets versions add FIREBASE_SERVICE_ACCOUNT_JSON --data-file=-
-```
-
-#### 3b — Other Secrets
-
-```bash
-# Gemini API Key
-echo -n "your_gemini_api_key" | gcloud secrets create GEMINI_API_KEY --data-file=-
-
-# Opsify API Key
-echo -n "your_opsify_api_key" | gcloud secrets create OPSIFY_API_KEY --data-file=-
-
-# Google Maps API Key (optional)
-echo -n "your_maps_api_key" | gcloud secrets create GOOGLE_MAPS_API_KEY --data-file=-
-```
-
----
-
-### Step 4 — Deploy from Source (No Docker!)
-
-Run this from the **`e:\projects\Opsify`** directory:
-
-```bash
-gcloud run deploy opsify-backend \
-  --source . \
-  --region asia-south1 \
-  --platform managed \
-  --allow-unauthenticated \
-  --port 8080 \
-  --memory 1Gi \
-  --cpu 1 \
-  --min-instances 0 \
-  --max-instances 5 \
-  --set-secrets="FIREBASE_SERVICE_ACCOUNT_JSON=FIREBASE_SERVICE_ACCOUNT_JSON:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,OPSIFY_API_KEY=OPSIFY_API_KEY:latest,GOOGLE_MAPS_API_KEY=GOOGLE_MAPS_API_KEY:latest"
-```
-
-> [!IMPORTANT]
-> `--source .` tells Cloud Run to build from your source code automatically using Buildpacks — **no Dockerfile or Docker installation needed**.
->
-> Cloud Run reads your `Procfile` to know how to start the server:
-> ```
-> web: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
-> ```
-
-> [!NOTE]
-> `asia-south1` = Mumbai (closest to Pakistan). You can also use `asia-southeast1` (Singapore).
-
----
-
-### Step 5 — Grant Secret Access
-
-After the first deploy, grant the Cloud Run service account permission to read secrets:
-
-```bash
-# Get your project number
-PROJECT_NUMBER=$(gcloud projects describe YOUR_PROJECT_ID --format="value(projectNumber)")
-
-# Grant secret access to the Cloud Run service account
-gcloud secrets add-iam-policy-binding FIREBASE_SERVICE_ACCOUNT_JSON \
-  --member="serviceAccount:$PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
-  --role="roles/secretmanager.secretAccessor"
-
-gcloud secrets add-iam-policy-binding GEMINI_API_KEY \
-  --member="serviceAccount:$PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
-  --role="roles/secretmanager.secretAccessor"
-
-gcloud secrets add-iam-policy-binding OPSIFY_API_KEY \
-  --member="serviceAccount:$PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
-  --role="roles/secretmanager.secretAccessor"
-```
-
-Then redeploy:
-
-```bash
-gcloud run deploy opsify-backend --source . --region asia-south1
-```
-
----
-
-### Step 6 — Get Your API URL
-
-```bash
-gcloud run services describe opsify-backend --region asia-south1 --format="value(status.url)"
-```
-
-You'll get a URL like: `https://opsify-backend-xxxxxx-em.a.run.app`
-
----
-
-### Step 7 — Update the React Native App URL
-
-In `react_native_app/src/services/api.ts`, update the production URL:
-
-```ts
+```typescript
 const getBaseUrl = () => {
-  // Production Cloud Run URL
+  // Replace with your actual Cloud Run URL
   const PROD_URL = 'https://opsify-backend-xxxxxx-em.a.run.app/api';
   
   if (__DEV__) {
@@ -155,101 +117,78 @@ const getBaseUrl = () => {
 };
 ```
 
+### Step 2 — Configure Android Package Name
+
+Before building the APK, your app needs an Android package name. Open `react_native_app/app.json` and ensure the `android` section has a `package` property:
+
+```json
+"android": {
+  "package": "com.opsify.app",
+  "adaptiveIcon": {
+    "foregroundImage": "./assets/adaptive-icon.png",
+    "backgroundColor": "#ffffff"
+  },
+  "edgeToEdgeEnabled": true,
+  "predictiveBackGestureEnabled": false
+}
+```
+
 ---
 
-## Part 2 — Mobile: Build Android APK/AAB (Expo EAS)
+## Part 3 — Mobile: Build Android APK (Expo EAS)
 
-### Prerequisites
-- Node.js installed
-- Expo account (free at [expo.dev](https://expo.dev))
+Expo Application Services (EAS) allows you to build the APK in the cloud without installing Android Studio locally.
 
-### Step 1 — Install EAS CLI
+### Step 1 — Create an Expo Account
+Go to **[expo.dev](https://expo.dev)** and sign up for a free account.
 
+### Step 2 — Install EAS CLI & Login
+
+Run this in your terminal (locally):
 ```bash
 npm install -g eas-cli
 eas login
 ```
 
-### Step 2 — Configure EAS Build
+### Step 3 — Configure EAS Build
 
+Navigate to the React Native app directory:
 ```bash
 cd e:\projects\Opsify\react_native_app
 eas build:configure
 ```
-
-This creates `eas.json`. Make sure it has:
+This generates an `eas.json` file. Edit it to ensure the preview profile builds an `.apk`:
 
 ```json
 {
+  "cli": {
+    "version": ">= 12.0.0"
+  },
   "build": {
     "preview": {
-      "android": { "buildType": "apk" }
+      "android": {
+        "buildType": "apk"
+      }
     },
     "production": {
-      "android": { "buildType": "app-bundle" }
+      "android": {
+        "buildType": "app-bundle"
+      }
     }
   }
 }
 ```
 
-### Step 3 — Build APK (for direct install/testing)
+### Step 4 — Build the APK
 
+Run the following command to start the build in Expo's cloud:
 ```bash
 eas build --platform android --profile preview
 ```
 
-- Builds in the cloud (no local Android SDK needed)
-- When done, download the `.apk` from the link provided
-- Install with: `adb install opsify.apk` or share the download link
+- This takes about 5–10 minutes.
+- Once finished, you will receive a **download link** for the `.apk` file in your terminal (and on your expo.dev dashboard).
+- Download the `.apk` and install it on your Android device directly or via adb: `adb install opsify.apk`.
 
-### Step 4 — Build AAB (for Google Play Store)
-
-```bash
-eas build --platform android --profile production
-```
-
----
-
-## Part 3 — Alternative: Google App Engine (even simpler)
-
-If Cloud Run feels complex, App Engine is one command:
-
-```bash
-# From e:\projects\Opsify
-gcloud app deploy
-```
-
-The `app.yaml` file is already configured. App Engine automatically:
-- Installs `requirements.txt`
-- Reads `app.yaml` for the startup command
-- No Docker, no Buildpacks to think about
-
-> [!WARNING]
-> App Engine **always** has at least one instance running (can't scale to zero), so it will have a small monthly cost even when idle. Cloud Run scales to zero = free when not in use.
-
----
-
-## Quick Reference
-
-| Goal | Command |
-|---|---|
-| Deploy backend (no Docker) | `gcloud run deploy opsify-backend --source . --region asia-south1` |
-| View live URL | `gcloud run services describe opsify-backend --region asia-south1 --format="value(status.url)"` |
-| Stream live logs | `gcloud run services logs tail opsify-backend --region asia-south1` |
-| Update a secret | `echo -n "new_value" \| gcloud secrets versions add SECRET_NAME --data-file=-` |
-| Build Android APK | `eas build --platform android --profile preview` |
-| Build Play Store AAB | `eas build --platform android --profile production` |
-| Check build status | `eas build:list` |
-| App Engine deploy | `gcloud app deploy` |
-
----
-
-## Files Added to Repo
-
-| File | Purpose |
-|---|---|
-| `Procfile` | Tells Cloud Run / Buildpacks how to start the server |
-| `app.yaml` | Alternative: Google App Engine config |
-| `requirements.txt` | Pinned dependency versions for reproducible builds |
-| `.env.example` | Template with all required env vars documented |
-| `firebase_store.py` | Updated to support `FIREBASE_SERVICE_ACCOUNT_JSON` env var |
+> **Note:** If you want to publish to the Google Play Store later, use the production profile to build an Android App Bundle (`.aab`):
+> `eas build --platform android --profile production`
