@@ -9,25 +9,13 @@ type Screen = 'list' | 'room' | 'new-chat';
 
 interface Props {
   currentUserId: string;
-  setIsFloatingBotHidden?: (hidden: boolean) => void;
 }
 
-export const OmniChatScreen = ({ currentUserId, setIsFloatingBotHidden }: Props) => {
+export const OmniChatScreen = ({ currentUserId }: Props) => {
   const [screen, setScreen] = useState<Screen>('list');
   const [selectedChat, setSelectedChat] = useState<{ chat: Chat; otherUser: User } | null>(null);
   const [searchEmail, setSearchEmail] = useState('');
   const [isSearching, setIsSearching] = useState(false);
-
-  useEffect(() => {
-    if (setIsFloatingBotHidden) {
-      setIsFloatingBotHidden(screen === 'room');
-    }
-    return () => {
-      if (setIsFloatingBotHidden) {
-        setIsFloatingBotHidden(false);
-      }
-    };
-  }, [screen, setIsFloatingBotHidden]);
 
   if (!currentUserId) return null;
 

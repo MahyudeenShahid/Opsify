@@ -1,30 +1,47 @@
-.agents
+# ── Secrets (NEVER commit these) ──────────────────────────────
 .env
-.vscode
+*.env
 service_account.json
-node_modules
-__pycache__
-venv
-.venv
-react_native_app/node_modules
-firebase_config.json
-react_native_app/ios
-react_native_app/android
-react_native_app/ios/Pods
+service_account.private.json
 firebase-adminsdk.json
-# SQLite files
+firebase_config.json
+google-services.json
+GoogleService-Info.plist
+
+# ── Python ────────────────────────────────────────────────────
+__pycache__/
+__pycache__/*
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+
+# ── SQLite / local databases ──────────────────────────────────
 *.db
 *.db-wal
 *.db-shm
-mock_google_sheet.csv
-# Python cache
-*.pyc
-*.pyo
-.pytest_cache/
+*.sqlite3
 Opsify.db
 opsify_business.db
-*.pyc
-__pycache__
-__pycache__ /*
-opsify_business.db
-opsify_business.db
+opsify_action.db
+mock_google_sheet.csv
+
+# ── React Native / Node ───────────────────────────────────────
+node_modules/
+react_native_app/node_modules/
+react_native_app/ios/
+react_native_app/android/
+react_native_app/ios/Pods/
+react_native_app/.expo/
+react_native_app/dist/
+
+# ── IDE / OS ──────────────────────────────────────────────────
+.vscode/
+.agents/
+.idea/
+*.DS_Store
+Thumbs.db
+
+# ── Logs ──────────────────────────────────────────────────────
+*.log

@@ -234,7 +234,6 @@ export default function App() {
       Animated.timing(scaleAnim, { toValue: 0.97, duration: 120, easing: Easing.out(Easing.ease), useNativeDriver: true }),
     ]).start(() => {
       setActiveTab(tab);
-      setIsFloatingBotHidden(false);
       Animated.parallel([
         Animated.timing(fadeAnim,  { toValue: 1, duration: 220, useNativeDriver: true }),
         Animated.spring(scaleAnim, { toValue: 1, ...Theme.animation.spring, useNativeDriver: true }),
@@ -301,7 +300,6 @@ export default function App() {
             {activeTab === 'omnichat' && (
               <OmniChatScreen
                 currentUserId={user.uid}
-                setIsFloatingBotHidden={setIsFloatingBotHidden}
               />
             )}
           </ErrorBoundary>
