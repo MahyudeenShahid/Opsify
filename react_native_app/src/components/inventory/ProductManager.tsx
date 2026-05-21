@@ -78,16 +78,6 @@ export const ProductManager: React.FC<Props> = ({ inventory, onRefresh }) => {
 
   const handleDelete = async (item: any) => {
     const msg = `Delete "${item.name}"? This will also remove all its stock and transaction history.`;
-    
-    if (Platform.OS === 'web') {
-      if (window.confirm(msg)) {
-        try {
-          await ApiService.deleteProduct(item.id);
-          onRefresh();
-        } catch (e: any) { Alert.alert('Error', e.message); }
-      }
-      return;
-    }
 
     Alert.alert(
       'Delete Product',

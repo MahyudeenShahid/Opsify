@@ -76,17 +76,6 @@ export const WarehouseManager: React.FC<Props> = ({ warehouses, onRefresh }) => 
 
   const handleDelete = async (wh: any) => {
     const msg = `Delete "${wh.name}"? Any products assigned here will lose their warehouse reference.`;
-    
-    if (Platform.OS === 'web') {
-      if (window.confirm(msg)) {
-        try {
-          const res = await ApiService.deleteWarehouse(wh.id);
-          if (res.status === 'error') Alert.alert('Failed', res.message);
-          else onRefresh();
-        } catch (e: any) { Alert.alert('Error', e.message); }
-      }
-      return;
-    }
 
     Alert.alert(
       'Delete Warehouse',
@@ -99,14 +88,9 @@ export const WarehouseManager: React.FC<Props> = ({ warehouses, onRefresh }) => 
           onPress: async () => {
             try {
               const res = await ApiService.deleteWarehouse(wh.id);
-              if (res.status === 'error') {
-                Alert.alert('Failed', res.message);
-              } else {
-                onRefresh();
-              }
-            } catch (e: any) {
-              Alert.alert('Error', e.message);
-            }
+              if (res.status === 'error') Alert.alert('Failed', res.message);
+              else onRefresh();
+            } catch (e: any) { Alert.alert('Error', e.message); }
           },
         },
       ]

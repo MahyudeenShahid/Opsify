@@ -59,30 +59,22 @@ export const AccountSettingsScreen: React.FC<Props> = ({ onBack }) => {
       setIsReseedingData(true);
       try {
         await ApiService.reseedUserData();
-        if (Platform.OS === 'web') window.alert('✅ Demo data loaded! Check your ERP Hub — Sugar & Bread are critically low to demo the reorder alerts.');
-        else Alert.alert('✅ Demo Data Loaded', 'Your workspace has been seeded with sample products, suppliers, and low-stock alerts.\n\nCheck ERP Hub → Inventory tab to see the reorder alerts!');
+        Alert.alert('✅ Demo Data Loaded', 'Your workspace has been seeded with sample products, suppliers, and low-stock alerts.\n\nCheck ERP Hub → Inventory tab to see the reorder alerts!');
       } catch (e: any) {
-        if (Platform.OS === 'web') window.alert('Error: ' + e.message);
-        else Alert.alert('Error', e.message);
+        Alert.alert('Error', e.message);
       } finally {
         setIsReseedingData(false);
       }
     };
 
-    if (Platform.OS === 'web') {
-      if (window.confirm('This will reload all sample data (5 products, 4 suppliers, 2 warehouses). Any existing data will be overwritten. Continue?')) {
-        doReseed();
-      }
-    } else {
-      Alert.alert(
-        '🌱 Load Demo Data',
-        'This will seed your workspace with sample products, suppliers, warehouses, and demo transactions — including low-stock alerts to test the reorder features.\n\nExisting data may be overwritten.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Load Demo Data', onPress: doReseed },
-        ]
-      );
-    }
+    Alert.alert(
+      '🌱 Load Demo Data',
+      'This will seed your workspace with sample products, suppliers, warehouses, and demo transactions — including low-stock alerts to test the reorder features.\n\nExisting data may be overwritten.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Load Demo Data', onPress: doReseed },
+      ]
+    );
   };
 
 
@@ -132,21 +124,6 @@ export const AccountSettingsScreen: React.FC<Props> = ({ onBack }) => {
   const handlePasswordReset = async () => {
     if (!user.email) return;
 
-    if (Platform.OS === 'web') {
-      if (window.confirm(`Send a password reset email to ${user.email}?`)) {
-        setIsResetingPassword(true);
-        try {
-          await sendPasswordResetEmail(auth, user.email!);
-          window.alert('✅ Email Sent: Check your inbox for the password reset link.');
-        } catch (e: any) {
-          window.alert('Error: ' + e.message);
-        } finally {
-          setIsResetingPassword(false);
-        }
-      }
-      return;
-    }
-
     Alert.alert(
       'Reset Password',
       `Send a password reset email to ${user.email}?`,
@@ -171,16 +148,6 @@ export const AccountSettingsScreen: React.FC<Props> = ({ onBack }) => {
   };
 
   const handleSignOut = () => {
-    if (Platform.OS === 'web') {
-      if (window.confirm('Are you sure you want to sign out?')) {
-        setIsSigningOut(true);
-        signOut(auth).catch((e: any) => {
-          window.alert('Error: ' + e.message);
-          setIsSigningOut(false);
-        });
-      }
-      return;
-    }
 
     Alert.alert(
       'Sign Out',
