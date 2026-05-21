@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  SafeAreaView, StatusBar, StyleSheet, Text, View,
+  StatusBar, StyleSheet, Text, View,
   TouchableOpacity, Animated, Easing, Modal, Platform,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import {
   BrainCircuit, Boxes, MessageCircle, Navigation, Bot,
   TrendingUp, Settings, Eye, EyeOff, Bell, BadgeDollarSign
@@ -248,128 +249,120 @@ export default function App() {
   if (loading) return <LoadingSplash />;
   if (!user) return <AuthScreen />;
 
-  if (needsOnboarding) {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <StatusBar barStyle="light-content" backgroundColor={Theme.colors.background} />
-        <OnboardingScreen onComplete={() => setNeedsOnboarding(false)} />
-      </SafeAreaView>
-    );
-  }
-
-  if (showAccountSettings) {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <StatusBar barStyle="light-content" backgroundColor={Theme.colors.background} />
-        <AccountSettingsScreen onBack={() => setShowAccountSettings(false)} />
-      </SafeAreaView>
-    );
-  }
-
-  if (showNotifications) {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <StatusBar barStyle="light-content" backgroundColor={Theme.colors.background} />
-        <NotificationsScreen onClose={() => setShowNotifications(false)} />
-      </SafeAreaView>
-    );
-  }
-
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor={Theme.colors.background} />
+    <SafeAreaProvider>
+      {needsOnboarding ? (
+        <SafeAreaView style={styles.safeArea}>
+          <StatusBar barStyle="light-content" backgroundColor={Theme.colors.background} />
+          <OnboardingScreen onComplete={() => setNeedsOnboarding(false)} />
+        </SafeAreaView>
+      ) : showAccountSettings ? (
+        <SafeAreaView style={styles.safeArea}>
+          <StatusBar barStyle="light-content" backgroundColor={Theme.colors.background} />
+          <AccountSettingsScreen onBack={() => setShowAccountSettings(false)} />
+        </SafeAreaView>
+      ) : showNotifications ? (
+        <SafeAreaView style={styles.safeArea}>
+          <StatusBar barStyle="light-content" backgroundColor={Theme.colors.background} />
+          <NotificationsScreen onClose={() => setShowNotifications(false)} />
+        </SafeAreaView>
+      ) : (
+        <SafeAreaView style={styles.safeArea}>
+          <StatusBar barStyle="light-content" backgroundColor={Theme.colors.background} />
 
-      {/* Top Controls Bar */}
-      <View style={styles.topControls}>
-        <View style={styles.brandContainer}>
-          <BadgeDollarSign size={20} color={Theme.colors.primary} />
-          <Text style={styles.brandText}>Opsify</Text>
-        </View>
+          {/* Top Controls Bar */}
+          <View style={styles.topControls}>
+            <View style={styles.brandContainer}>
+              <BadgeDollarSign size={20} color={Theme.colors.primary} />
+              <Text style={styles.brandText}>Opsify</Text>
+            </View>
 
-        <BlurView intensity={40} tint="dark" style={styles.topControlsGlass}>
-          <BellButton unreadCount={unreadCount} onPress={() => setShowNotifications(true)} />
-          <View style={styles.topControlsDivider} />
-          <TouchableOpacity
-            style={styles.settingsBtn}
-            onPress={() => setShowAccountSettings(true)}
-            activeOpacity={0.7}
-          >
-            <Settings size={18} color="#FFF" />
-          </TouchableOpacity>
-        </BlurView>
-      </View>
+            <BlurView intensity={40} tint="dark" style={styles.topControlsGlass}>
+              <BellButton unreadCount={unreadCount} onPress={() => setShowNotifications(true)} />
+              <View style={styles.topControlsDivider} />
+              <TouchableOpacity
+                style={styles.settingsBtn}
+                onPress={() => setShowAccountSettings(true)}
+                activeOpacity={0.7}
+              >
+                <Settings size={18} color="#FFF" />
+              </TouchableOpacity>
+            </BlurView>
+          </View>
 
-      {/* Main Content */}
-      <AppDataProvider>
-        <Animated.View style={[styles.container, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
-          <ErrorBoundary fallbackTitle="Customer Brain Error">
-            {activeTab === 'customer' && <CustomerBrainScreen />}
-          </ErrorBoundary>
-          <ErrorBoundary fallbackTitle="ERP Hub Error">
-            {activeTab === 'inventory' && <InventoryDashboardScreen />}
-          </ErrorBoundary>
-          <ErrorBoundary fallbackTitle="OmniChat Error">
-            {activeTab === 'omnichat' && (
-              <OmniChatScreen
-                currentUserId={user.uid}
+          {/* Main Content */}
+          <AppDataProvider>
+            <Animated.View style={[styles.container, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
+              <ErrorBoundary fallbackTitle="Customer Brain Error">
+                {activeTab === 'customer' && <CustomerBrainScreen />}
+              </ErrorBoundary>
+              <ErrorBoundary fallbackTitle="ERP Hub Error">
+                {activeTab === 'inventory' && <InventoryDashboardScreen />}
+              </ErrorBoundary>
+              <ErrorBoundary fallbackTitle="OmniChat Error">
+                {activeTab === 'omnichat' && (
+                  <OmniChatScreen
+                    currentUserId={user.uid}
+                  />
+                )}
+              </ErrorBoundary>
+              <ErrorBoundary fallbackTitle="Delivery Error">
+                {activeTab === 'logistics' && <DeliveryIntelligenceScreen />}
+              </ErrorBoundary>
+              <ErrorBoundary fallbackTitle="OpsBot Error">
+                {activeTab === 'opsbot' && <ChatScreen currentUserId={user.uid} />}
+              </ErrorBoundary>
+              <ErrorBoundary fallbackTitle="ERP Agent Error">
+                {activeTab === 'erpagent' && <ERPAgentScreen />}
+              </ErrorBoundary>
+            </Animated.View>
+          </AppDataProvider>
+
+          {/* Premium Floating Nav Bar */}
+          <View style={styles.floatingNavContainer}>
+            <BlurView intensity={50} tint="dark" style={styles.glassNav}>
+              {/* Inner glow border */}
+              <LinearGradient
+                colors={['rgba(0,230,118,0.06)', 'rgba(0,0,0,0)', 'rgba(0,176,255,0.04)']}
+                style={[StyleSheet.absoluteFill, { borderRadius: Theme.borderRadius.pill }]}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                pointerEvents="none"
               />
-            )}
-          </ErrorBoundary>
-          <ErrorBoundary fallbackTitle="Delivery Error">
-            {activeTab === 'logistics' && <DeliveryIntelligenceScreen />}
-          </ErrorBoundary>
-          <ErrorBoundary fallbackTitle="OpsBot Error">
-            {activeTab === 'opsbot' && <ChatScreen currentUserId={user.uid} />}
-          </ErrorBoundary>
-          <ErrorBoundary fallbackTitle="ERP Agent Error">
-            {activeTab === 'erpagent' && <ERPAgentScreen />}
-          </ErrorBoundary>
-        </Animated.View>
-      </AppDataProvider>
-
-      {/* Premium Floating Nav Bar */}
-      <View style={styles.floatingNavContainer}>
-        <BlurView intensity={50} tint="dark" style={styles.glassNav}>
-          {/* Inner glow border */}
-          <LinearGradient
-            colors={['rgba(0,230,118,0.06)', 'rgba(0,0,0,0)', 'rgba(0,176,255,0.04)']}
-            style={[StyleSheet.absoluteFill, { borderRadius: Theme.borderRadius.pill }]}
-            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-            pointerEvents="none"
-          />
-          {TABS.map(({ id, label, Icon }) => (
-            <NavButton
-              key={id}
-              isActive={activeTab === id}
-              onPress={() => switchTab(id)}
-              icon={
-                <Icon
-                  size={22}
-                  color={activeTab === id ? Theme.colors.primary : Theme.colors.textMuted}
+              {TABS.map(({ id, label, Icon }) => (
+                <NavButton
+                  key={id}
+                  isActive={activeTab === id}
+                  onPress={() => switchTab(id)}
+                  icon={
+                    <Icon
+                      size={22}
+                      color={activeTab === id ? Theme.colors.primary : Theme.colors.textMuted}
+                    />
+                  }
+                  label={label}
                 />
-              }
-              label={label}
-            />
-          ))}
-        </BlurView>
-      </View>
+              ))}
+            </BlurView>
+          </View>
 
-      {/* Floating OpsBot */}
-      {activeTab !== 'opsbot' && activeTab !== 'omnichat' && (
-        <TouchableOpacity style={styles.floatingChatButton} onPress={() => setIsChatOpen(true)} activeOpacity={0.8}>
-          <Bot size={26} color={Theme.colors.background} />
-        </TouchableOpacity>
+          {/* Floating OpsBot */}
+          {activeTab !== 'opsbot' && activeTab !== 'omnichat' && (
+            <TouchableOpacity style={styles.floatingChatButton} onPress={() => setIsChatOpen(true)} activeOpacity={0.8}>
+              <Bot size={26} color={Theme.colors.background} />
+            </TouchableOpacity>
+          )}
+
+          {/* OpsBot Modal */}
+          <Modal visible={isChatOpen} animationType="slide" transparent onRequestClose={() => setIsChatOpen(false)}>
+            <View style={styles.modalOverlay}>
+              <BlurView intensity={90} tint="dark" style={styles.modalContent}>
+                <ChatScreen onClose={() => setIsChatOpen(false)} currentUserId={user?.uid} />
+              </BlurView>
+            </View>
+          </Modal>
+        </SafeAreaView>
       )}
-
-      {/* OpsBot Modal */}
-      <Modal visible={isChatOpen} animationType="slide" transparent onRequestClose={() => setIsChatOpen(false)}>
-        <View style={styles.modalOverlay}>
-          <BlurView intensity={90} tint="dark" style={styles.modalContent}>
-            <ChatScreen onClose={() => setIsChatOpen(false)} currentUserId={user?.uid} />
-          </BlurView>
-        </View>
-      </Modal>
-    </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 

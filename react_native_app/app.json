@@ -1,7 +1,8 @@
 {
   "expo": {
     "name": "Opsify",
-    "slug": "Opsify",
+    "slug": "react_native_app",
+    "scheme": "opsify",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -13,7 +14,8 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.opsify.app"
     },
     "android": {
       "package": "com.opsify.app",
@@ -33,6 +35,7 @@
       }
     },
     "plugins": [
+      "expo-dev-client",
       "expo-web-browser"
     ]
   }
