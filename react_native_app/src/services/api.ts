@@ -2,7 +2,7 @@ import { Platform } from 'react-native';
 import { auth } from '../config/firebaseConfig';
 
 const getBaseUrl = () => {
-  if (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_API_URL) {
+  if (typeof process !== 'undefined' && process.env.EXPO_PUBLIC_API_URL) {
     return process.env.EXPO_PUBLIC_API_URL;
   }
   if (Platform.OS === 'web') return 'http://localhost:8000/api';
@@ -12,7 +12,7 @@ const getBaseUrl = () => {
 
 const BASE_URL = getBaseUrl();
 
-const API_KEY = (typeof process !== 'undefined' && (process.env?.EXPO_PUBLIC_OPSIFY_API_KEY || process.env?.OPSIFY_API_KEY)) || '';
+const API_KEY = (typeof process !== 'undefined' && (process.env.EXPO_PUBLIC_OPSIFY_API_KEY || process.env.OPSIFY_API_KEY)) || '';
 
 const authHeaders = (): Record<string, string> => {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
